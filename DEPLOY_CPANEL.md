@@ -69,3 +69,8 @@ Wait 10 seconds and open the site again, then login.
 - The server fetches inverter data by itself every 15 min while it runs (built-in timer, `INTERNAL_SCHEDULER=1` by default).
 - Keep the Hostinger cron as a backup (it wakes the app if Hostinger ever puts it to sleep). Both together never double-fetch: a run is skipped if one happened in the last 12 min.
 - The app header shows "Inverter data updated X min ago". If it turns orange (over 40 min), the background job has stopped – check the Hostinger cron.
+
+## Growatt online / offline
+- Online/offline comes from Growatt's device list (`lost` flag) – the same thing the Growatt portal counts. Plant power alone is often 0, so it is no longer used to decide offline.
+- If the plant reports 0 W while the inverter is online, live power is read from the inverter itself (MIN/MIC/TL-X, MAX or standard inverter).
+- An OFFLINE alert opens only after the inverter has stayed offline for 45 minutes in daytime (`OFFLINE_ALERT_MINUTES`).

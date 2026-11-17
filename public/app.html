@@ -81,6 +81,27 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:10px;paddi
 #login h2{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--forest);margin:6px 0 2px;line-height:1.1}
 #login h2 small{display:block;font:500 11px var(--sans);letter-spacing:2.2px;text-transform:uppercase;color:var(--gold);margin-top:8px}
 #login .mark{display:block}
+/* Toolbars, chips, status */
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:14px 0 10px}.toolbar input{flex:1 1 260px;width:auto;margin:0}.toolbar select{width:auto;min-width:170px;margin:0}.toolbar button.b{width:auto;margin:0;padding:8px 16px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 14px}
+.chip{display:flex;align-items:baseline;gap:7px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 14px;cursor:pointer;font:500 12.5px var(--sans);color:var(--muted);box-shadow:var(--sh);transition:border-color .15s,transform .1s}
+.chip b{font:600 20px var(--serif);color:var(--ink)}.chip:hover{border-color:var(--moss)}.chip.on{border-color:var(--forest);background:#eef3ec;color:var(--forest)}
+.chip.c-ok b{color:#2e7d4f}.chip.c-bad b{color:var(--red)}.chip.c-alerts b{color:#c77700}.chip.c-low b{color:#c77700}
+.pill{display:inline-block;font:600 11px var(--sans);padding:3px 9px;border-radius:999px;letter-spacing:.3px}
+.p-ok{background:#e3f1e6;color:#21683f}.p-bad{background:#f8e3de;color:var(--red)}.p-err{background:#efe7e4;color:#8a4b3d}.p-wait{background:#efe9dc;color:#7a6331}
+.sub{font-size:11.5px;color:var(--muted);margin-top:2px}.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px}
+td.n,th.n{text-align:right;white-space:nowrap}
+tr.rbad td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+.bar{width:84px;height:6px;background:#ece5d6;border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--moss);border-radius:6px}.bar.low i{background:#d08a2c}
+td.act{white-space:nowrap}
+#rTbl{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:12px}.rt{min-width:980px}
+.mini{background:var(--card);border:1px solid var(--line);border-radius:999px;padding:3px 9px;margin:0 3px 3px 0;font:500 11.5px var(--sans);color:var(--forest);cursor:pointer}.mini:hover{border-color:var(--moss)}.mini.del{color:var(--red)}
+.tag.warn{background:#fbf0dc;color:#9a6512;border-color:#efd9ae}
+details.fold{margin-top:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;box-shadow:var(--sh)}
+details.fold>summary{cursor:pointer;font:600 12px var(--sans);letter-spacing:1.4px;text-transform:uppercase;color:var(--gold);list-style:none}
+details.fold>summary::before{content:'▸ ';color:var(--muted)}details.fold[open]>summary::before{content:'▾ '}
+.qf{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:12px;background:var(--paper);border:1px solid var(--line);border-radius:10px}
+.qf>b{flex-basis:100%;font-family:var(--sans)!important;font-size:13.5px!important}.qf select,.qf input{flex:1 1 180px;width:auto;margin:0}.qf button.b{margin:0}
 @media (max-width:760px){main{flex-direction:column}#side,#genPage>div:first-child{width:100%;max-height:42vh;border-right:0!important;border-bottom:1px solid var(--line)!important}
  #mapPage,#genPage{flex-direction:column}#map,#gmap{min-height:55vh}.page{padding:18px 16px 40px}header .brand small{display:none}}
 @media print{header,#side{display:none}.page{padding:0}}
@@ -126,17 +147,22 @@ pre{background:var(--card);border:1px solid var(--line);border-radius:10px;paddi
 <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><div><label>From</label><input type="date" id="pFrom"></div><div><label>Days</label><select id="pDays"><option>7</option><option>3</option><option>14</option><option>30</option></select></div>
 <div><label>Include</label><label><input type="checkbox" class="pk" value="SURVEY" checked style="width:auto"> Site survey</label><label><input type="checkbox" class="pk" value="MAINTENANCE" checked style="width:auto"> Maintenance</label><label><input type="checkbox" class="pk" value="CLEANING" checked style="width:auto"> Cleaning</label><label><input type="checkbox" class="pk" value="AMC" checked style="width:auto"> AMC</label></div>
 <div><button class="b" onclick="planner()">Show</button></div><div><button class="b g" onclick="window.print()">Print</button></div></div><div id="planBody"></div></div>
-<div id="rmsPage" class="page"><h3>Inverter remote monitoring</h3><div id="brandBox" class="small"></div><div id="connBox"></div><div id="unmapBox"></div>
-<h4>Link inverter to customer</h4><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+<div id="rmsPage" class="page"><h3>Inverter remote monitoring</h3><div id="brandBox" class="small"></div>
+<div id="rStats" class="chips"></div>
+<div class="toolbar"><input id="rFind" placeholder="Search customer, serial, city, phone…" oninput="rDraw()"><select id="rSort" onchange="rDraw()"><option value="status">Problems first</option><option value="gen">Lowest generation first</option><option value="name">Name A–Z</option><option value="kw">Biggest system first</option></select><button class="b g" onclick="rRefresh()">↻ Refresh now</button></div>
+<div id="rTbl"></div>
+<details id="unmapWrap" class="fold"><summary id="unmapSum">Auto-imported inverters</summary><div id="unmapBox"></div></details>
+<details class="fold"><summary>Link an inverter manually</summary><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
 <div><label>Search customer / project / phone</label><input id="rQ" oninput="rSearch()" style="width:240px"><select id="rProj" style="width:240px"></select></div>
 <div><label>…or new customer (ERP not linked yet)</label><input id="rCust" placeholder="Customer name" style="width:160px"><input id="rPhone" placeholder="Phone" style="width:110px"><input id="rPin" placeholder="Pincode" style="width:80px"></div>
 <div><label>Brand</label><select id="rBrand"><option>GROWATT</option><option value="SOLARMAN">DEYE (Solarman)</option><option>SUNGROW</option><option>PVBLINK</option></select></div>
 <div><label>Inverter serial *</label><input id="rSn"></div><div><label>Data logger serial</label><input id="rLog"></div><div><label>System kW</label><input id="rKw" type="number" style="width:80px"></div>
-<div><button class="b" onclick="rAdd()">Link</button></div><div><button class="b g" onclick="rRefresh()">Refresh now</button></div></div>
-<div id="rTbl" style="margin-top:12px"></div></div>
+<div><button class="b" onclick="rAdd()">Link</button></div></div></details>
+<details id="connWrap" class="fold"><summary>Inverter company connections (keys)</summary><div id="connBox"></div></details></div>
 <div id="alertPage" class="page"><h3>Inverter alerts &amp; follow-up</h3>
 <p class="small">Alerts open automatically from RMS data and close automatically when the inverter is normal again. Orange cards = question due (asked again every 24 hours until resolved).</p>
-<select id="aStatus" style="width:200px" onchange="alertsPage()"><option value="OPEN">Open</option><option value="RESOLVED">Resolved</option></select> <button class="b g" style="width:auto;padding:6px 12px" onclick="api('/api/rms/evaluate',{method:'POST',body:'{}'}).then(alertsPage)">Run performance check now</button><div id="aList"></div></div>
+<div class="toolbar"><select id="aStatus" onchange="alertsPage()"><option value="OPEN">Open alerts</option><option value="RESOLVED">Resolved</option></select><input id="aFind" placeholder="Search customer, serial, area, phone…" oninput="aDraw()"><button class="b g" onclick="api('/api/rms/evaluate',{method:'POST',body:'{}'}).then(alertsPage)">Run performance check now</button></div>
+<div id="aChips" class="chips"></div><div id="aList"></div></div>
 <div id="areaPage" class="page"><h3>Area / Pincode summary</h3><p class="small">Use this to club site surveys of the same area on the same day.</p><div id="areaTbl"></div></div>
 <div id="importPage" class="page"><h3>Excel import (until ERP API is live)</h3>
 <p class="small">Column names = field names in API Docs (e.g. project_id, customer_name, pincode, lat, lng, stage, stage_date ...). Spaces/case don't matter.</p>
@@ -207,19 +233,39 @@ async function planner(){if(!$('pFrom').value)$('pFrom').value=new Date().toISOS
  <table style="margin-top:6px"><tr><th>Date</th><th>Type</th><th>Customer</th><th>Phone</th><th>Address</th><th>Engineer</th><th>Status</th><th>ID</th></tr>
  ${g.jobs.map(j=>`<tr><td>${fmt(j.date)}</td><td><span style="color:${KIND[j.kind]}">■</span> ${j.kind}</td><td>${j.customer||''}</td><td><a href="tel:${j.phone||''}">${j.phone||''}</a></td><td>${j.address||''}</td><td>${j.engineer||'-'}</td><td>${NAMES[j.status]||j.status||''}</td><td>${j.ext_id}</td></tr>`).join('')}</table></div>`).join('');}
 const LABEL={GROWATT:'Growatt',SOLARMAN:'Deye (Solarman)',SUNGROW:'Sungrow (iSolarCloud)',PVBLINK:'PVblink'};
-async function connPage(){if(ME.role!=='admin'){$('connBox').innerHTML='';return;}const st=await api('/api/rms/settings');
- $('connBox').innerHTML='<h4>Inverter company connections (admin)</h4><div style="display:flex;gap:10px;flex-wrap:wrap">'+st.map(b=>`<div style="border:1px solid #ccc;border-radius:6px;padding:8px;width:260px">
+async function connPage(){if(ME.role!=='admin'){$('connWrap').style.display='none';return;}const st=await api('/api/rms/settings');
+ $('connWrap').open=!st.some(b=>b.configured);$('connBox').innerHTML='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">'+st.map(b=>`<div style="border:1px solid #ccc;border-radius:6px;padding:8px;width:260px">
  <b>${LABEL[b.brand]}</b> <span style="color:${b.configured?'green':'red'}">${b.configured?'● connected':'● not set'}</span>
  ${b.fields.map(f=>`<label>${f.key.replace(b.brand+'_','').replace(/_/g,' ')}${/BASE/.test(f.key)?' (optional)':''}</label><input data-k="${f.key}" type="${f.secret?'password':'text'}" placeholder="${f.secret&&f.set?'•••••• saved':''}" value="${f.value}">`).join('')}
  <button class="b" onclick="connSave('${b.brand}',this)">Save</button><button class="b g" onclick="connTest('${b.brand}')">Test connection</button></div>`).join('')+'</div><p class="small">Secrets are stored on the server only and never shown again. Leave a secret box empty to keep the saved value.</p>';}
 async function connSave(brand,btn){const o={};btn.parentElement.querySelectorAll('input[data-k]').forEach(i=>{if(i.value)o[i.dataset.k]=i.value;});await api('/api/rms/settings',{method:'POST',body:JSON.stringify(o)});connPage();rmsPage(true);}
 async function connTest(brand){const r=await api('/api/rms/test/'+brand,{method:'POST'});alert(LABEL[brand]+': '+r.message);}
 async function rmsPage(skipConn){if(!skipConn)connPage();unmapped();const b=await api('/api/rms/brands');$('brandBox').innerHTML='API status: '+b.map(x=>`${x.brand==='SOLARMAN'?'DEYE/Solarman':x.brand}: <b style="color:${x.configured?'green':'red'}">${x.configured?'connected':'key not set'}</b>`).join(' | ');
- const d=await api('/api/rms/devices');const low=+(window.LOWGEN||2.5);
- $('rTbl').innerHTML='<table><tr><th>Customer</th><th>Project</th><th>Pincode</th><th>Brand</th><th>Inverter SN</th><th>Logger SN</th><th>kW</th><th>Now (kW)</th><th>Today (kWh)</th><th>Today per kW</th><th>Status</th><th>Last update</th><th></th></tr>'+
- d.map(x=>{const pk=x.kw&&x.today_kwh!=null?(x.today_kwh/x.kw).toFixed(2):'-';const bad=x.last_error||x.online===0||(pk!=='-'&&+pk<low&&new Date().getHours()>=17);
- return `<tr style="${bad?'background:#ffebee':''}"><td>${x.customer||''}<br><small>${x.phone||''}</small></td><td>${x.project_ext_id}${String(x.project_ext_id).startsWith('TMP-')?' <span style="color:#ef6c00">(temporary)</span>':''}</td><td>${x.pincode||''}</td><td>${x.brand==='SOLARMAN'?'DEYE':x.brand}</td><td>${x.serial}</td><td>${x.logger_serial||''}</td><td>${x.kw||''}</td><td>${x.last_power_kw??'-'}</td><td>${x.today_kwh??'-'}</td><td>${pk}</td>
- <td>${x.no_alerts?'<span class="tag">Out of warranty – no alerts</span><br>':''}${x.last_error?'<span style="color:red">'+x.last_error+'</span>':x.online===0?'<b style="color:red">OFFLINE</b>':x.online===1?'Online':'-'}</td><td>${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</td><td><a href="#" onclick="rTest(${x.id});return false">Test</a> | <a href="#" onclick="rEdit(${x.id},'${x.project_ext_id}');return false">Edit</a> | <a href="#" onclick="rDel(${x.id});return false">Remove</a>${['admin','manager'].includes(ME.role)?` | <a href="#" onclick="warranty('${x.serial}',${!x.no_alerts});return false">${x.no_alerts?'Alerts ON again':'Out of warranty'}</a>`:''}</td></tr>`;}).join('')+'</table><p class="small">Red rows = offline, API error, or low generation (check for maintenance / cleaning).</p>';}
+ RDATA=await api('/api/rms/devices');rDraw();}
+let RDATA=[],RF='';
+const f2=(v,d=1)=>v==null||v===''||isNaN(+v)?'–':(+v).toFixed(d).replace(/\.0+$/,'');
+function ago(t){if(!t)return'never';const m=Math.round((Date.now()-new Date(t))/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';}
+function rState(x){if(x.last_error&&!/^ALARM/.test(x.last_error))return['err','No data'];if(x.last_error)return['bad','Alarm'];if(x.online===1)return['ok','Online'];if(x.online===0)return['bad','Offline'];return['wait','Waiting'];}
+function rDraw(){const low=+(window.LOWGEN||2.5),late=new Date().getHours()>=17,qq=($('rFind').value||'').toLowerCase().trim();
+ const yieldOf=x=>x.kw&&x.today_kwh!=null?x.today_kwh/x.kw:null;
+ const tests={'':()=>true,ok:x=>rState(x)[0]==='ok',bad:x=>['bad','err'].includes(rState(x)[0]),alerts:x=>!!x.alerts,low:x=>late&&yieldOf(x)!=null&&yieldOf(x)<low,unlinked:x=>!x.project_ext_id,ow:x=>!!x.no_alerts};
+ const cnt=k=>RDATA.filter(tests[k]).length;
+ const chips=[['','All'],['ok','Online'],['bad','Offline / no data'],['alerts','With alerts'],...(late?[['low','Low generation today']]:[]),['unlinked','Not linked'],['ow','Out of warranty']];
+ $('rStats').innerHTML=chips.map(([k,t])=>`<button class="chip ${RF===k?'on':''} c-${k||'all'}" onclick="RF='${k}';rDraw()"><b>${cnt(k)}</b>${t}</button>`).join('');
+ let l=RDATA.filter(tests[RF]||tests['']).filter(x=>!qq||`${x.customer||''} ${x.serial} ${x.logger_serial||''} ${x.area||''} ${x.phone||''} ${x.project_ext_id||''} ${x.pincode||''}`.toLowerCase().includes(qq));
+ const rank=x=>({err:0,bad:0,wait:2,ok:3})[rState(x)[0]]-(x.alerts?1:0)+(x.no_alerts?4:0),srt=$('rSort').value;
+ l.sort(srt==='name'?(a,b)=>(a.customer||'').localeCompare(b.customer||''):srt==='kw'?(a,b)=>(+b.kw||0)-(+a.kw||0):srt==='gen'?(a,b)=>(yieldOf(a)??99)-(yieldOf(b)??99):(a,b)=>rank(a)-rank(b)||(yieldOf(a)??99)-(yieldOf(b)??99));
+ const canEdit=['admin','manager'].includes(ME.role);
+ $('rTbl').innerHTML=l.length?'<table class="rt"><tr><th>Customer</th><th>Project</th><th>Inverter</th><th class="n">Size</th><th class="n">Now</th><th class="n">Today</th><th>Yield today</th><th>Status</th><th>Updated</th><th></th></tr>'+
+ l.map(x=>{const [st,label]=rState(x),y=yieldOf(x),lowY=late&&y!=null&&y<low;
+  return `<tr class="${st==='bad'||st==='err'?'rbad':''}"><td><b>${x.customer||'—'}</b><div class="sub">${[x.phone,x.area,x.pincode].filter(Boolean).join(' · ')}</div></td>
+  <td>${x.project_ext_id?x.project_ext_id+(String(x.project_ext_id).startsWith('TMP-')?' <span class="tag">temporary</span>':''):'<span class="tag warn">Not linked</span>'}</td>
+  <td>${x.brand==='SOLARMAN'?'DEYE':x.brand}<div class="sub mono">${x.serial}${x.logger_serial?' · '+x.logger_serial:''}</div></td>
+  <td class="n">${f2(x.kw,2)} kW</td><td class="n">${f2(x.last_power_kw,2)} kW</td><td class="n">${f2(x.today_kwh)} kWh</td>
+  <td>${y==null?'–':`<div class="bar ${lowY?'low':''}"><i style="width:${Math.min(100,y/5*100)}%"></i></div><span class="sub">${y.toFixed(2)} kWh/kW</span>`}</td>
+  <td><span class="pill p-${st}">${label}</span>${x.online===0&&x.offline_since?`<div class="sub">since ${new Date(x.offline_since).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</div>`:''}${x.alerts?`<div class="sub" style="color:var(--red)">⚠ ${x.alerts.split(',').map(t=>(ANAME[t]||t).split(' –')[0]).join(', ')}</div>`:''}${x.no_alerts?'<div><span class="tag">Out of warranty</span></div>':''}${st==='err'?`<div class="sub" title="${String(x.last_error).replace(/"/g,'&quot;')}" style="color:var(--red)">${String(x.last_error).slice(0,60)}</div>`:''}</td>
+  <td class="sub">${ago(x.last_fetch)}</td>
+  <td class="act"><button class="mini" onclick="rTest(${x.id})">Test</button>${canEdit?`<button class="mini" onclick="rEdit(${x.id},'${x.project_ext_id||''}')">Link</button><button class="mini" onclick="warranty('${x.serial}',${!x.no_alerts})">${x.no_alerts?'Alerts on':'Warranty off'}</button><button class="mini del" title="Remove" onclick="rDel(${x.id})">✕</button>`:''}</td></tr>`;}).join('')+'</table>':'<p class="small" style="margin:18px 0">Nothing matches this filter.</p>';}
 async function rSearch(){const r=await api('/api/projects/search?q='+encodeURIComponent($('rQ').value));$('rProj').innerHTML=r.map(p=>`<option value="${p.ext_id}" data-kw="${p.capacity_kw||''}">${p.customer} – ${p.ext_id} – ${p.pincode||''}</option>`).join('');const o=$('rProj').selectedOptions[0];if(o&&o.dataset.kw)$('rKw').value=o.dataset.kw;}
 async function rAdd(){const r=await api('/api/rms/devices',{method:'POST',body:JSON.stringify({project_ext_id:$('rCust').value?'':$('rProj').value,customer:$('rCust').value,phone:$('rPhone').value,pincode:$('rPin').value,brand:$('rBrand').value,serial:$('rSn').value,logger_serial:$('rLog').value,capacity_kw:$('rKw').value})});if(r.error)return alert(r.error);$('rSn').value=$('rLog').value=$('rCust').value=$('rPhone').value=$('rPin').value='';rmsPage(true);}
 async function rEdit(id,cur){const p=prompt('Link to ERP Project ID (current: '+cur+')',cur.startsWith('TMP-')?'':cur);if(p===null)return;
@@ -247,18 +293,23 @@ async function bgStatus(){try{const s=await api('/api/bg-status');const m=s.last
 async function warranty(sn,out){if(!confirm(out?`Mark inverter ${sn} as OUT OF WARRANTY?\n\nAll its open alerts will close and no new alerts will come. Generation data is still collected. You can undo this in the RMS tab.`:`Turn alerts back ON for ${sn} (in warranty / AMC)?`))return;
  const r=await api('/api/rms/warranty',{method:'POST',body:JSON.stringify({serial:sn,out})});if(r.error)return alert(r.error);badge();
  const p=document.querySelector('header button.on')?.dataset.p;if(p==='rmsPage')rmsPage(true);else alertsPage();}
-async function alertsPage(){const r=await api('/api/alerts?status='+$('aStatus').value);badge();
+let ALERTS=[],AF='';
+async function alertsPage(){ALERTS=await api('/api/alerts?status='+$('aStatus').value);badge();aDraw();}
+function aDraw(){const qq=($('aFind').value||'').toLowerCase().trim(),T=k=>a=>k===''||(k==='DUE'?a.due:a.type===k);
+ const keys=[['','All'],...($('aStatus').value==='OPEN'?[['DUE','Question due']]:[]),...Object.keys(ANAME).map(k=>[k,ANAME[k].split(' –')[0]])];
+ $('aChips').innerHTML=keys.map(([k,t])=>{const n=ALERTS.filter(T(k)).length;return n||k===''?`<button class="chip ${AF===k?'on':''}" onclick="AF='${k}';aDraw()"><b style="${k&&ATYPE[k]?'color:'+ATYPE[k]:''}">${n}</b>${t}</button>`:'';}).join('');
+ const r=ALERTS.filter(T(AF)).filter(a=>!qq||`${a.customer||''} ${a.serial} ${a.area||''} ${a.pincode||''} ${a.phone||''} ${a.message||''}`.toLowerCase().includes(qq));
  $('aList').innerHTML=r.length?r.map(a=>`<div style="border:1px solid #ccc;border-left:6px solid ${a.due?'#fb8c00':ATYPE[a.type]};border-radius:6px;margin:10px 0;padding:10px;${a.due?'background:#fff8e1':''}">
  <b style="color:${ATYPE[a.type]}">${ANAME[a.type]||a.type}</b> – <b>${a.customer||a.project_ext_id}</b> ${a.phone?`<a href="tel:${a.phone}">${a.phone}</a>`:''} | ${a.area||''} ${a.pincode||''} | ${a.brand||''} SN ${a.serial}<br>
  ${a.message}<br><span class="small">Open since ${new Date(a.opened_at).toLocaleString('en-IN')} (${a.age_hrs} h) | Follow-up round ${a.round}${a.engineer?' | Engineer: '+a.engineer:''}${a.status==='RESOLVED'?' | Resolved by '+a.resolved_by+' at '+new Date(a.resolved_at).toLocaleString('en-IN'):''}</span>
  ${a.status==='OPEN'&&['admin','manager'].includes(ME.role)?`<button class="b ow" onclick="warranty('${a.serial}',true)">Out of warranty – stop alerts</button>`:''}
- ${a.status==='OPEN'?`<div style="margin-top:8px;padding:8px;background:#fff;border:1px dashed #999;border-radius:4px"><b>${a.due?'❓ ':''}${a.question.q}</b>
+ ${a.status==='OPEN'?`<div class="qf"><b>${a.due?'❓ ':''}${a.question.q}</b>
  <select id="ans${a.id}">${a.question.options.map(o=>`<option>${o}</option>`).join('')}</select>
  <input id="eng${a.id}" placeholder="Engineer name (if assigned)" value="${a.engineer||''}"><input id="note${a.id}" placeholder="Remarks">
  <button class="b" style="width:auto;padding:6px 14px" onclick="answer(${a.id})">Submit answer</button>
  <button class="b g" style="width:auto;padding:6px 14px" onclick="resolveA(${a.id})">Mark resolved</button>
  ${!a.due&&a.next_ask_at?`<span class="small"> Next question: ${new Date(a.next_ask_at).toLocaleString('en-IN')}</span>`:''}</div>`:''}
- <a href="#" class="small" onclick="logA(${a.id},this);return false">History</a><div id="log${a.id}"></div></div>`).join(''):'<p>No alerts 🎉</p>';}
+ <a href="#" class="small" onclick="logA(${a.id},this);return false">History</a><div id="log${a.id}"></div></div>`).join(''):'<p class="small" style="margin:18px 0">No alerts here 🎉</p>';}
 async function answer(id){const r=await api(`/api/alerts/${id}/answer`,{method:'POST',body:JSON.stringify({answer:$('ans'+id).value,engineer:$('eng'+id).value,note:$('note'+id).value})});if(r.error)alert(r.error);alertsPage();}
 async function resolveA(id){const n=prompt('What was done to resolve?');if(n===null)return;await api(`/api/alerts/${id}/resolve`,{method:'POST',body:JSON.stringify({note:n})});alertsPage();}
 async function logA(id){const l=await api(`/api/alerts/${id}/log`);$('log'+id).innerHTML='<table>'+l.map(x=>`<tr><td>${new Date(x.at).toLocaleString('en-IN')}</td><td>${x.who}</td><td>${x.question?'<i>'+x.question+'</i><br>':''}${x.answer?'<b>'+x.answer+'</b> ':''}${x.note||''}</td></tr>`).join('')+'</table>';}
@@ -281,7 +332,8 @@ function genDraw(fit){const b=$('gBrand').value,f=$('gFilter').value,qq=$('gQ').
  if(fit&&pts.length)GMAP.fitBounds(L.latLngBounds(pts).pad(.1));}
 // ---------- Auto-imported inverters to map ----------
 async function unmapped(){const d=(await api('/api/rms/devices')).filter(x=>!x.project_ext_id);const canEdit=['admin','manager'].includes(ME.role);
- $('unmapBox').innerHTML=`<h4>Auto-imported inverters ${d.length?`– map to ERP project (${d.length} not mapped)`:''}</h4>
+ $('unmapSum').textContent=d.length?`Not linked to an ERP project (${d.length}) – link them here`:'Auto-imported inverters (all linked)';
+ $('unmapBox').innerHTML=`<div style="margin-top:10px"></div>
  ${canEdit?'<button class="b" style="width:auto;padding:6px 14px" onclick="discover(\'GROWATT\',this)">Import all Growatt plants now</button> <span class="small">Also runs automatically once a day.</span>':''}
  <datalist id="projList"></datalist>${d.length?`<table style="margin-top:8px"><tr><th>Brand</th><th>Plant name</th><th>City</th><th>Serial</th><th>Logger</th><th>kW</th><th>Today kWh</th><th>Map to project</th></tr>`+
  d.map(x=>`<tr><td>${x.brand==='SOLARMAN'?'DEYE':x.brand}</td><td>${x.plant_name||''}</td><td>${x.city||''}</td><td>${x.serial}</td><td>${x.logger_serial||''}</td><td>${x.kw||''}</td><td>${x.today_kwh??'-'}</td>

@@ -30,7 +30,7 @@ const SCHEMA=[
 `CREATE TABLE IF NOT EXISTS web_enquiries(id INT AUTO_INCREMENT PRIMARY KEY,ref VARCHAR(30) UNIQUE,name VARCHAR(120),phone VARCHAR(15),email VARCHAR(120),pincode VARCHAR(10),segment VARCHAR(20),monthly_bill VARCHAR(30),message VARCHAR(600),page VARCHAR(200),ip VARCHAR(60),created_at VARCHAR(30),erp_status VARCHAR(20) DEFAULT 'PENDING',erp_response VARCHAR(300),INDEX(created_at))`,
 `CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`];
 async function initDB(){for(const s of SCHEMA)await q(s);
- for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
+ for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)','offline_since VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
 // ---- Stage normalisation (Evergreen workflow) ----
 const STAGES=['ENQUIRY','SURVEY_REQUESTED','SURVEY_SCHEDULED','SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE','PROJECT_CREATED','AGREEMENT_PENDING','DISPATCH_PENDING','INSTALLATION_PENDING','NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED','OTHER'];
 function normStage(s){const t=String(s||'').toUpperCase().replace(/[^A-Z]+/g,'_');if(STAGES.includes(t))return t;
@@ -148,7 +148,7 @@ app.post('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const ok=new Set
 app.post('/api/rms/test/:brand',auth(['admin']),W(async(req,res)=>{const c=RMS.connectors[req.params.brand];if(!c)return res.status(404).json({error:'unknown'});
  try{if(!RMS.configured(req.params.brand))throw new Error('credentials not set');let msg='Connected';if(c.testInfo)msg=await c.testInfo();else if(c.token)await c.token();res.json({ok:true,message:msg});}catch(e){res.json({ok:false,message:e.message});}}));
 app.get('/api/rms/brands',auth(),(req,res)=>res.json(RMS.BRANDS.map(b=>({brand:b,configured:RMS.configured(b)}))));
-app.get('/api/rms/devices',auth(),W(async(req,res)=>res.json(await q('SELECT d.*,COALESCE(p.customer,d.plant_name) customer,p.phone,p.pincode,COALESCE(p.area,d.city) area,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,COALESCE(d.capacity_kw,p.capacity_kw) kw FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id ORDER BY d.project_ext_id IS NULL DESC,d.id DESC'))));
+app.get('/api/rms/devices',auth(),W(async(req,res)=>res.json(await q('SELECT d.*,COALESCE(p.customer,d.plant_name) customer,p.phone,p.pincode,COALESCE(p.area,d.city) area,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,COALESCE(d.capacity_kw,p.capacity_kw) kw,(SELECT GROUP_CONCAT(DISTINCT a.type) FROM alerts a WHERE a.serial=d.serial AND a.status=\'OPEN\') alerts FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id ORDER BY d.project_ext_id IS NULL DESC,d.id DESC'))));
 app.post('/api/rms/devices',auth(['admin','manager']),W(async(req,res)=>{let {project_ext_id,brand,serial,logger_serial,capacity_kw,customer,phone,pincode}=req.body;
  serial=String(serial||'').trim();if(!serial||!RMS.BRANDS.includes(brand))return res.status(400).json({error:'brand and serial required'});
  if(project_ext_id){if(!await one('SELECT 1 x FROM projects WHERE ext_id=?',[project_ext_id]))return res.status(400).json({error:'Project ID not found'});}
@@ -208,17 +208,20 @@ async function autoResolve(id,why){await q("UPDATE alerts SET status='RESOLVED',
 async function evalAlerts(d,r,err,fails){const hr=istHour(),daylight=hr>=9&&hr<=16,want={};
  if(err){if(fails>=3&&!/key|token|login|unauthor|credential|not configured/i.test(err))want.OFFLINE='No data from inverter/logger: '+err;}
  else{if(r.alarm){if(/grid|no.?grid|mains|island|ac.?volt|ac.?freq|utility/i.test(r.alarm))want.GRID=r.alarm;else want.FAULT=r.alarm;}
-  if(r.online===false&&daylight&&!want.GRID)want.OFFLINE='Inverter not running in daytime';}
+  const offMin=d.offline_since?(Date.now()-Date.parse(d.offline_since))/60000:0; // must stay offline 45 min before an alert (no false alarms from one bad reading)
+  if(r.online===false&&daylight&&!want.GRID&&offMin>=+(process.env.OFFLINE_ALERT_MINUTES||45))want.OFFLINE='Inverter offline / not running in daytime for '+Math.round(offMin)+' min';}
  for(const [t,m] of Object.entries(want))await openAlert(d,t,m);
  for(const a of await q("SELECT * FROM alerts WHERE serial=? AND status='OPEN' AND type IN ('FAULT','GRID','OFFLINE')",[d.serial])){
-  if(want[a.type])continue;if(err&&a.type!=='OFFLINE')continue;if(err&&fails>=3)continue;await autoResolve(a.id,'inverter back to normal');}}
+  if(want[a.type])continue;if(a.type==='OFFLINE'&&r&&r.online===false)continue; // still offline – keep the alert (and its follow-up history)
+  if(err&&a.type!=='OFFLINE')continue;if(err&&fails>=3)continue;await autoResolve(a.id,'inverter back to normal');}}
 async function pollRMS(maxMs=240000){const t0=Date.now();await loadSettings();
  const devs=await q('SELECT * FROM rms_devices ORDER BY COALESCE(last_fetch,"") ASC');let n=0;
  const byBrand={};devs.forEach(d=>(byBrand[d.brand]=byBrand[d.brand]||[]).push(d));
  await Promise.all(Object.entries(byBrand).map(async([brand,list])=>{if(!RMS.configured(brand))return;
   for(const d of list){if(Date.now()-t0>maxMs)break;
    try{const r=await RMS.connectors[brand].fetchDevice(d.serial,d);
-    await q('UPDATE rms_devices SET last_power_kw=?,today_kwh=?,total_kwh=?,online=?,last_fetch=?,last_error=?,fail_count=0 WHERE id=?',[r.power_kw,r.today_kwh,r.total_kwh,r.online==null?null:(r.online?1:0),now(),r.alarm?('ALARM: '+r.alarm).slice(0,300):null,d.id]);
+    d.offline_since=r.online===false?(d.offline_since||now()):null;
+    await q('UPDATE rms_devices SET last_power_kw=?,today_kwh=?,total_kwh=?,online=?,last_fetch=?,last_error=?,fail_count=0,offline_since=? WHERE id=?',[r.power_kw!=null?+(+r.power_kw).toFixed(3):null,r.today_kwh,r.total_kwh,r.online==null?null:(r.online?1:0),now(),r.alarm?('ALARM: '+r.alarm).slice(0,300):null,d.offline_since,d.id]);
     if(r.today_kwh!=null)await q('INSERT INTO rms_daily(serial,day,kwh) VALUES(?,?,?) ON DUPLICATE KEY UPDATE kwh=VALUES(kwh)',[d.serial,istDay(),r.today_kwh]);
     await evalAlerts(d,r,null,0);n++;}
    catch(e){const f=(d.fail_count||0)+1;await q('UPDATE rms_devices SET last_error=?,last_fetch=?,fail_count=? WHERE id=?',[String(e.message).slice(0,300),now(),f,d.id]);await evalAlerts(d,null,e.message,f);}
@@ -291,13 +294,13 @@ app.post('/api/rms/evaluate',auth(['admin','manager']),W(async(req,res)=>{const 
 let running=false;
 app.get('/api/admin/keys',auth(['admin']),(req,res)=>{const host=req.get('host');res.json({cron_command:`curl -s "https://${host}/cron/tick?key=${CRON_KEY}" > /dev/null`,erp_api_key:ERP_KEY,erp_base_url:`https://${host}/erp/v1`});});
 app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v FROM kv_state WHERE k='last_tick'");res.json({last_tick:r?r.v:null});}));
-app.get('/cron/tick',W(async(req,res)=>{if(!CRON_KEY||req.query.key!==CRON_KEY)return res.status(401).json({error:'bad key'});if(running)return res.json({ok:true,skipped:'already running'});
- // Hostinger cron AND the built-in timer both call this – run at most once per 12 min so inverter APIs are not hit twice
- const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!req.query.force)return res.json({ok:true,skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});
- running=true;await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);const out={},t0=Date.now();try{out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
+async function runTick(force){if(running)return{skipped:'already running'};running=true;
+ try{const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!force){running=false;return({skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});}}catch(e){running=false;throw e;}
+ const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}
- finally{running=false;}res.json({ok:true,...out});}));
+ finally{running=false;}return out;}
+app.get('/cron/tick',W(async(req,res)=>{if(!CRON_KEY||req.query.key!==CRON_KEY)return res.status(401).json({error:'bad key'});res.json({ok:true,...await runTick(!!req.query.force)});}));
 // ---- Public enquiry form (website) -> saved here + pushed to ERP ----
 const hits={};
 async function pushToERP(e){const url=process.env.ERP_ENQUIRY_WEBHOOK;if(!url)return;
@@ -382,5 +385,5 @@ function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended
   await q('REPLACE INTO users(name,username,password_hash,role,active) VALUES(?,?,?,?,1)',[name||u,u,bcrypt.hashSync(pw,10),'admin']);console.log('Admin created:',u);process.exit(0);}
  app.listen(PORT,()=>console.log('Evergreen Field Map running on port',PORT));
  // Built-in timer (default ON): keeps fetching data while the server runs, even if nobody has the app open. Hostinger cron is the backup.
- if(process.env.INTERNAL_SCHEDULER!=='0'){const tick=()=>fetch(`http://127.0.0.1:${PORT}/cron/tick?key=${CRON_KEY}`).catch(()=>{});setTimeout(tick,60e3);setInterval(tick,5*60e3);}
+ if(process.env.INTERNAL_SCHEDULER!=='0'){const tick=()=>runTick(false).catch(e=>console.error('tick',e.message));setTimeout(tick,60e3);setInterval(tick,5*60e3);}
 })().catch(e=>{console.error('Startup failed:',e.message);setupApp(e.message);});

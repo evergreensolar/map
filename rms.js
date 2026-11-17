@@ -44,10 +44,22 @@ const connectors={
     const sns=[];try{const d=await this.get(`/device/list?plant_id=${pid}&page=1&perpage=100`);this.list(d,'devices','device_list','list').forEach(x=>{const sn=x.device_sn??x.deviceSn??x.sn;if(sn)sns.push({sn,logger:x.datalogger_sn??x.dataloggerSn??null});});}catch(e){}
     rec.serial=sns[0]?.sn||('GW-'+pid);rec.logger_serial=sns[0]?.logger||null;rec.inverters=sns.map(x=>x.sn).join(',').slice(0,300)||null;out.push(rec);await sleep(600);}
    return{list:out,complete};},
+  isLost(x){const v=x.lost;return v===true||v===1||v==='1'||String(v).toLowerCase()==='true';},
+  // device-level live data by Growatt device type (1=inverter, 4=MAX, 7=MIN/MIC/TL-X); returns AC power in W or null
+  async devPower(x){const sn=x.device_sn??x.deviceSn??x.sn;if(!sn)return null;const t=+x.type;
+   const order=t===7?['tlx']:t===4?['max']:t===1?['inv']:['tlx','inv'];
+   const ep={tlx:`/device/tlx/tlx_last_data?tlx_sn=`,inv:`/device/inverter/last_new_data?device_sn=`,max:`/device/max/max_last_data?max_sn=`};
+   for(const k of order){try{const d=await this.get(ep[k]+encodeURIComponent(sn));const v=num(d.pac??d.ppv??d.pacToGridTotal);if(v!=null)return{w:v,raw:d};}catch(e){}}return null;},
   async fetchDevice(sn,dev){
    if(dev?.plant_id){const d=await this.get(`/plant/data?plant_id=${dev.plant_id}`);let p=num(d.current_power??d.currentPower??d.power);const cap=dev.capacity_kw||null;
-    if(p!=null&&(cap?p>cap*1.5:p>100))p=p/1000; // W -> kW
-    return{power_kw:p,today_kwh:num(d.today_energy??d.todayEnergy??d.eToday),total_kwh:num(d.total_energy??d.totalEnergy??d.eTotal),online:p==null?null:p>0,raw:d};}
+    const toKw=w=>w!=null&&(cap?w>cap*1.5:w>100)?w/1000:w; // W -> kW
+    p=toKw(p);
+    // Online/offline exactly like the Growatt portal: device list "lost" flag (plant power alone is often 0/stale)
+    let devs=[];try{devs=this.list(await this.get(`/device/list?plant_id=${dev.plant_id}&page=1&perpage=100`),'devices','device_list','list');}catch(e){}
+    let online=devs.length?devs.some(x=>!this.isLost(x)):(p==null?null:p>0),src='plant';
+    if(online&&!p){let w=0,got=false;for(const x of devs.filter(x=>!this.isLost(x)).slice(0,3)){const r=await this.devPower(x);if(r){w+=r.w;got=true;}}if(got){p=toKw(w);src='device';}}
+    return{power_kw:p,today_kwh:num(d.today_energy??d.todayEnergy??d.eToday),total_kwh:num(d.total_energy??d.totalEnergy??d.eTotal),online,
+     raw:{plant_data:d,power_from:src,devices:devs.map(x=>({sn:x.device_sn,type:x.type,lost:x.lost,status:x.status,last_update_time:x.last_update_time,model:x.model}))}};}
    // No plant id yet (added manually by serial): try the standard inverter endpoint, then MIN/TL-X models
    let d,err;for(const p of [`/device/inverter/last_new_data?device_sn=`,`/device/tlx/tlx_last_data?tlx_sn=`]){try{d=await this.get(p+encodeURIComponent(sn));if(d&&Object.keys(d).length)break;}catch(e){err=e;d=null;}}
    if(!d||!Object.keys(d).length)throw err||new Error('Growatt: no data for '+sn+' – use "Import all Growatt plants now"');
