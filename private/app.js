@@ -20,8 +20,8 @@ async function init(){try{ME=await api('/auth/me');}catch(e){return;}$('login').
  const tb=t&&document.querySelector(`header button[data-p="${t}"]`);if(tb&&tb.style.display!=='none'&&t!=='mapPage')show(tb);bgStatus();}
 function show(b){document.querySelectorAll('header button[data-p]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
  try{history.replaceState(null,'','#'+b.dataset.p);localStorage.setItem('ef_tab',b.dataset.p);}catch(e){}LAST_REFRESH=Date.now();
- ['mapPage','genPage','planPage','areaPage','rmsPage','alertPage','importPage','usersPage','docsPage'].forEach(p=>$(p).style.display='none');$(b.dataset.p).style.display=['mapPage','genPage'].includes(b.dataset.p)?'flex':'block';
- if(b.dataset.p=='mapPage')map.invalidateSize();if(b.dataset.p=='areaPage')areas();if(b.dataset.p=='planPage')planner();if(b.dataset.p=='rmsPage')rmsPage();if(b.dataset.p=='genPage')genPage();if(b.dataset.p=='alertPage')alertsPage();if(b.dataset.p=='usersPage')users();if(b.dataset.p=='docsPage')docs();}
+ ['mapPage','todayPage','genPage','planPage','areaPage','rmsPage','alertPage','importPage','usersPage','docsPage'].forEach(p=>$(p).style.display='none');$(b.dataset.p).style.display=['mapPage','genPage'].includes(b.dataset.p)?'flex':'block';
+ if(b.dataset.p=='mapPage')map.invalidateSize();if(b.dataset.p=='areaPage')areas();if(b.dataset.p=='planPage')planner();if(b.dataset.p=='rmsPage')rmsPage();if(b.dataset.p=='genPage')genPage();if(b.dataset.p=='alertPage')alertsPage();if(b.dataset.p=='usersPage')users();if(b.dataset.p=='docsPage')docs();if(b.dataset.p=='todayPage')todayPage();}
 const fmt=d=>d?d.split('-').reverse().join('/'):'-';
 async function load(keepView){const st=[...$('fStage').selectedOptions].map(o=>o.value).join(',');const q=new URLSearchParams({stage:st,from:$('fFrom').value,to:$('fTo').value,team:$('fTeam').value,engineer:$('fEng').value,datefield:$('fDateField').value});
  projLayer.clearLayers();enqLayer.clearLayers();projects=[];const cnt={};
@@ -64,7 +64,7 @@ async function connSave(brand,btn){const o={};btn.parentElement.querySelectorAll
 async function connTest(brand){const r=await api('/api/rms/test/'+brand,{method:'POST'});alert(LABEL[brand]+': '+r.message);}
 async function rmsPage(skipConn){if(!skipConn)connPage();unmapped();const b=await api('/api/rms/brands');$('brandBox').innerHTML='API status: '+b.map(x=>`${x.brand==='SOLARMAN'?'DEYE/Solarman':x.brand}: <b style="color:${x.configured?'green':'red'}">${x.configured?'connected':'key not set'}</b>`).join(' | ');
  RDATA=await api('/api/rms/devices');rDraw();}
-let RDATA=[],RF='';
+let RDATA=[],RF='',RVIEW=[];
 const f2=(v,d=1)=>v==null||v===''||isNaN(+v)?'–':(+v).toFixed(d).replace(/\.0+$/,'');
 function ago(t){if(!t)return'never';const m=Math.round((Date.now()-new Date(t))/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';}
 function rState(x){if(x.last_error&&!/^ALARM/.test(x.last_error))return['err','No data'];if(x.last_error)return['bad','Alarm'];if(x.online===1)return['ok','Online'];if(x.online===0)return['bad','Offline'];return['wait','Idle (night)'];}
@@ -84,11 +84,11 @@ function rDraw(){const low=+(window.LOWGEN||2.5),late=new Date().getHours()>=17,
  $('rStats').innerHTML=chips.map(([k,t])=>`<button class="chip ${RF===k?'on':''} c-${k||'all'}" onclick="RF='${k}';rDraw()"><b>${cnt(k)}</b>${t}</button>`).join('');
  let l=RDATA.filter(tests[RF]||tests['']).filter(x=>!qq||`${x.customer||''} ${x.serial} ${x.logger_serial||''} ${x.area||''} ${x.phone||''} ${x.project_ext_id||''} ${x.pincode||''}`.toLowerCase().includes(qq));
  const rank=x=>({err:0,bad:0,wait:2,ok:3})[rState(x)[0]]-(x.alerts?1:0)+(x.no_alerts?4:0),srt=$('rSort').value;
- l.sort(srt==='name'?(a,b)=>(a.customer||'').localeCompare(b.customer||''):srt==='kw'?(a,b)=>(+b.kw||0)-(+a.kw||0):srt==='gen'?(a,b)=>(yieldOf(a)??99)-(yieldOf(b)??99):(a,b)=>rank(a)-rank(b)||(yieldOf(a)??99)-(yieldOf(b)??99));
+ RVIEW=l;l.sort(srt==='name'?(a,b)=>(a.customer||'').localeCompare(b.customer||''):srt==='kw'?(a,b)=>(+b.kw||0)-(+a.kw||0):srt==='gen'?(a,b)=>(yieldOf(a)??99)-(yieldOf(b)??99):(a,b)=>rank(a)-rank(b)||(yieldOf(a)??99)-(yieldOf(b)??99));
  const canEdit=['admin','manager'].includes(ME.role);
  $('rTbl').innerHTML=l.length?'<table class="rt"><tr><th>Customer</th><th>Project</th><th>Inverter</th><th class="n">Size</th><th class="n">Now</th><th class="n">Today</th><th>Yield today</th><th>Status</th><th>Updated</th><th></th></tr>'+
  l.map(x=>{const [st,label]=rState(x),y=yieldOf(x),lowY=late&&y!=null&&y<low;
-  return `<tr class="${st==='bad'||st==='err'?'rbad':''}"><td><b>${x.customer||'—'}</b><div class="sub">${[x.phone,x.area,x.pincode].filter(Boolean).join(' · ')}</div></td>
+  return `<tr class="${st==='bad'||st==='err'?'rbad':''}"><td><a href="#" class="lnk" onclick="dev(${x.id});return false"><b>${x.customer||'—'}</b></a><div class="sub">${[x.phone,x.area,x.pincode].filter(Boolean).join(' · ')}</div></td>
   <td>${x.project_ext_id?x.project_ext_id+(String(x.project_ext_id).startsWith('TMP-')?' <span class="tag">temporary</span>':''):'<span class="tag warn">Not linked</span>'}</td>
   <td>${x.brand==='SOLARMAN'?'DEYE':x.brand}<div class="sub mono">${x.serial}${x.logger_serial?' · '+x.logger_serial:''}</div></td>
   <td class="n">${f2(x.kw,2)} kW</td><td class="n">${f2(x.last_power_kw,2)} kW</td><td class="n">${f2(x.today_kwh)} kWh</td>
@@ -114,7 +114,7 @@ let LAST_REFRESH=Date.now();const REFRESH_MS=5*60e3;
 async function autoRefresh(force){if(!ME||document.hidden)return;const a=document.activeElement;if(!force&&a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;
  if(!force&&Date.now()-LAST_REFRESH<REFRESH_MS)return;LAST_REFRESH=Date.now();const p=document.querySelector('header button.on')?.dataset.p;
  try{if(p==='mapPage')await load(true);else if(p==='genPage'&&GMAP){GDATA=await api('/api/gen/map');genDraw(false);}else if(p==='rmsPage')await rmsPage(true);
-  else if(p==='alertPage')await alertsPage();else if(p==='areaPage')await areas();badge();bgStatus();}catch(e){}}
+  else if(p==='alertPage')await alertsPage();else if(p==='todayPage')await todayPage();else if(p==='areaPage')await areas();badge();bgStatus();}catch(e){}}
 setInterval(autoRefresh,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh();});
 async function bgStatus(){try{const s=await api('/api/bg-status');const m=s.last_tick?Math.round((Date.now()-Date.parse(s.last_tick))/60000):null;
  let el=$('bgSt');if(!el){el=document.createElement('span');el.id='bgSt';el.style.cssText='font-size:11px;margin:0 8px;opacity:.85';$('me').before(el);}
@@ -156,7 +156,7 @@ function genDraw(fit){const b=$('gBrand').value,f=$('gFilter').value,qq=$('gQ').
  gLayer.clearLayers();let kw=0,today=0,live=0,al=0,nl=0;const pts=[];
  l.forEach(x=>{kw+=+x.kw||0;today+=+x.today_kwh||0;live+=+x.last_power_kw||0;if(x.alerts)al++;const [c,t]=gColor(x);
   if(x.lat==null){nl++;return;}pts.push([x.lat,x.lng]);
-  L.circleMarker([x.lat,x.lng],{radius:x.alerts?10:7,color:'#222',weight:1,fillColor:c,fillOpacity:.9}).bindPopup(`<b>${x.name||x.serial}</b>${x.project_ext_id?'':' <i style="color:#ef6c00">(not mapped)</i>'}<br>${x.brand==='SOLARMAN'?'DEYE':x.brand} · SN ${x.serial}<br>${x.kw?x.kw+' kW · ':''}Now ${x.last_power_kw??'-'} kW<br>Today ${x.today_kwh??'-'} kWh ${x.kw&&x.today_kwh!=null?'('+(x.today_kwh/x.kw).toFixed(2)+' kWh/kW)':''}<br>Lifetime ${x.total_kwh!=null?Math.round(x.total_kwh)+' kWh':'-'}<br>Status: <b style="color:${c}">${t}</b>${x.alerts?'<br>Open alerts: <b>'+x.alerts+'</b>':''}${x.no_alerts?'<br><i>Out of warranty – no alerts</i>':''}${x.phone?'<br>'+x.phone:''}<br><small>${x.city||''} · updated ${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</small>`).addTo(gLayer);});
+  L.circleMarker([x.lat,x.lng],{radius:x.alerts?10:7,color:'#222',weight:1,fillColor:c,fillOpacity:.9}).bindPopup(`<b>${x.name||x.serial}</b>${x.project_ext_id?'':' <i style="color:#ef6c00">(not mapped)</i>'}<br>${x.brand==='SOLARMAN'?'DEYE':x.brand} · SN ${x.serial}<br>${x.kw?x.kw+' kW · ':''}Now ${x.last_power_kw??'-'} kW<br>Today ${x.today_kwh??'-'} kWh ${x.kw&&x.today_kwh!=null?'('+(x.today_kwh/x.kw).toFixed(2)+' kWh/kW)':''}<br>Lifetime ${x.total_kwh!=null?Math.round(x.total_kwh)+' kWh':'-'}<br>Status: <b style="color:${c}">${t}</b>${x.alerts?'<br>Open alerts: <b>'+x.alerts+'</b>':''}${x.no_alerts?'<br><i>Out of warranty – no alerts</i>':''}${x.phone?'<br>'+x.phone:''}<br><a href="#" onclick="dev(${x.id});return false">Open details »</a><br><small>${x.city||''} · updated ${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</small>`).addTo(gLayer);});
  $('gTot').innerHTML=`Systems: <b>${l.length}</b> · ${kw.toFixed(0)} kW<br>Live power: <b>${live.toFixed(1)} kW</b><br>Today: <b>${today.toFixed(0)} kWh</b>${kw?` (${(today/kw).toFixed(2)} kWh/kW)`:''}<br>With open alerts: <b style="color:#c62828">${al}</b>${nl?`<br><span style="color:#ef6c00">${nl} systems have no location yet</span>`:''}`;
  $('gList').innerHTML=l.filter(x=>x.alerts).slice(0,80).map(x=>`<div style="padding:4px 0;border-bottom:1px solid #ddd"><span style="color:${gColor(x)[0]}">●</span> ${x.name||x.serial} – ${x.alerts}</div>`).join('')||'No open alerts 🎉';
  if(fit&&pts.length)GMAP.fitBounds(L.latLngBounds(pts).pad(.1));}
@@ -180,3 +180,62 @@ async function delUser(id){if(confirm('Disable this user?')){await api('/api/use
 async function docs(){const t=await (await fetch('/docs/raw')).text();let k='';
  if(ME.role==='admin'){try{const x=await api('/api/admin/keys');k=`<div style="background:#fff8e1;border:1px solid #ffb300;border-radius:6px;padding:10px;margin:10px 0"><b>Admin only – keep private</b><br>Cron command (Hostinger cron, every 15 min):<br><code style="word-break:break-all">${x.cron_command}</code><br><br>ERP API key: <code style="word-break:break-all">${x.erp_api_key}</code><br>ERP base URL: <code>${x.erp_base_url}</code></div>`;}catch(e){}}
  $('docBody').innerHTML=k+marked.parse(t);}
+
+// ---------- CSV export of the current RMS view ----------
+function rCsv(){const cols=[['customer','Customer'],['phone','Phone'],['area','Area'],['pincode','Pincode'],['project_ext_id','Project'],['brand','Brand'],['serial','Inverter SN'],['logger_serial','Logger SN'],['kw','kW'],['last_power_kw','Now kW'],['today_kwh','Today kWh'],['online','Online'],['alerts','Open alerts'],['no_alerts','Out of warranty'],['last_fetch','Last update']];
+ const esc=v=>{v=v==null?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+ const csv='﻿'+cols.map(c=>c[1]).join(',')+'\n'+RVIEW.map(x=>cols.map(([k])=>esc(k==='online'?(x.online===1?'Online':x.online===0?'Offline':''):k==='no_alerts'?(x.no_alerts?'Yes':''):x[k])).join(',')).join('\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`inverters-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+// ---------- Inverter detail panel ----------
+function closeDev(){$('drawer').classList.remove('open');}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDev();});
+async function dev(id){const r=await api('/api/rms/devices/'+id+'/history');if(r.error)return alert(r.error);const d=r.device,[st,label]=rState(d);
+ $('dTitle').innerHTML=`<b>${d.customer||d.serial}</b><div class="sub">${[d.area,d.pincode,d.brand==='SOLARMAN'?'DEYE':d.brand,'SN '+d.serial].filter(Boolean).join(' · ')}</div>`;
+ const days=r.days,kwh=days.map(x=>+x.kwh||0),avg=kwh.length?kwh.reduce((a,b)=>a+b,0)/kwh.length:0,best=Math.max(0,...kwh),month=kwh.reduce((a,b)=>a+b,0);
+ // 30-day bar chart (bars = kWh, dots = nearby systems' median for the same size)
+ const W=500,H=170,pad=28,n=Math.max(days.length,1),bw=(W-pad-6)/n,mx=Math.max(1,...kwh,...days.map(x=>(+x.peer_median||0)*(+d.kw||0)))*1.1;
+ const vc={OK:'#38f0c8',DIRTY:'#ffad3b',LOW:'#ff5d6c',CLOUDY:'#7f9aa3'};
+ const bars=days.map((x,i)=>{const h=(+x.kwh||0)/mx*(H-pad-8),X=pad+i*bw+1;return `<rect x="${X.toFixed(1)}" y="${(H-pad-h).toFixed(1)}" width="${Math.max(2,bw-3).toFixed(1)}" height="${h.toFixed(1)}" rx="2" fill="${vc[x.verdict]||'#3ec7ff'}" opacity=".85"><title>${x.day}: ${(+x.kwh||0).toFixed(1)} kWh${x.verdict?' · '+x.verdict:''}</title></rect>`;}).join('');
+ const peers=days.map((x,i)=>x.peer_median&&d.kw?`<circle cx="${(pad+i*bw+bw/2).toFixed(1)}" cy="${(H-pad-(x.peer_median*d.kw)/mx*(H-pad-8)).toFixed(1)}" r="2.6" fill="#eafffa"><title>Nearby median: ${(x.peer_median*d.kw).toFixed(1)} kWh</title></circle>`:'').join('');
+ const ax=[0,.5,1].map(f=>`<text x="2" y="${(H-pad-f*(H-pad-8)+4).toFixed(1)}" font-size="9" fill="#7f9aa3" font-family="JetBrains Mono,monospace">${Math.round(mx*f)}</text><line x1="${pad}" x2="${W}" y1="${(H-pad-f*(H-pad-8)).toFixed(1)}" y2="${(H-pad-f*(H-pad-8)).toFixed(1)}" stroke="rgba(56,240,200,.08)"/>`).join('');
+ const lbl=days.length?`<text x="${pad}" y="${H-8}" font-size="9" fill="#7f9aa3" font-family="JetBrains Mono,monospace">${days[0].day.slice(5)}</text><text x="${W-4}" y="${H-8}" text-anchor="end" font-size="9" fill="#7f9aa3" font-family="JetBrains Mono,monospace">${days[days.length-1].day.slice(5)}</text>`:'';
+ $('dBody').innerHTML=`<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><span class="pill p-${st}">${label}</span>${d.no_alerts?'<span class="tag">Out of warranty</span>':''}${d.project_ext_id?`<span class="tag">${d.project_ext_id}</span>`:'<span class="tag warn">Not linked</span>'}
+  ${d.phone?`<a class="mini" style="text-decoration:none" href="tel:${d.phone}">📞 ${d.phone}</a><a class="mini" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/91${String(d.phone).slice(-10)}">WhatsApp</a>`:''}</div>
+ <div class="kv"><div><b>${f2(d.kw,2)}</b><span>System kW</span></div><div><b>${f2(d.last_power_kw,2)}</b><span>Now kW</span></div><div><b>${f2(d.today_kwh)}</b><span>Today kWh</span></div>
+  <div><b>${avg?avg.toFixed(1):'–'}</b><span>Avg kWh/day</span></div><div><b>${best?best.toFixed(1):'–'}</b><span>Best day</span></div><div><b>${month?Math.round(month):'–'}</b><span>Last 30 days</span></div></div>
+ <h4>Last 30 days</h4><div class="chart">${days.length?`<svg viewBox="0 0 ${W} ${H}" width="100%">${ax}${bars}${peers}${lbl}</svg><div class="sub" style="padding:4px 2px 6px">Bars: <span style="color:#38f0c8">normal</span> · <span style="color:#ffad3b">dusty</span> · <span style="color:#ff5d6c">low</span> · <span style="color:#7f9aa3">cloudy day</span> &nbsp; Dots: nearby systems (same size)</div>`:'<p class="small">No daily history yet – it builds up automatically every day.</p>'}</div>
+ <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0"><button class="mini" onclick="rTest(${d.id})">Test now (raw reply)</button>${['admin','manager'].includes(ME.role)?`<button class="mini" onclick="rEdit(${d.id},'${d.project_ext_id||''}')">Link to project</button><button class="mini" onclick="warranty('${d.serial}',${!d.no_alerts}).then(()=>dev(${d.id}))">${d.no_alerts?'Alerts on':'Warranty off'}</button>`:''}</div>
+ <h4>Alert history</h4>${r.alerts.length?r.alerts.map(a=>`<div class="tgrp"><b style="color:${ATYPE[a.type]||'#eafffa'}">${ANAME[a.type]||a.type}</b> <span class="pill ${a.status==='OPEN'?'p-bad':'p-ok'}">${a.status}</span><div class="sub">${a.message||''}</div><div class="sub">${new Date(a.opened_at).toLocaleString('en-IN')}${a.resolved_at?' → '+new Date(a.resolved_at).toLocaleString('en-IN')+' ('+(a.resolved_by||'')+')':''}${a.engineer?' · Engineer: '+a.engineer:''}</div></div>`).join(''):'<p class="small">No alerts so far 🎉</p>'}`;
+ $('drawer').classList.add('open');}
+// ---------- Today's action board ----------
+let TODAY=null;
+async function todayPage(){const [devs,als]=await Promise.all([api('/api/rms/devices'),api('/api/alerts?status=OPEN')]);RDATA=devs;
+ const byArea=l=>{const g={};l.forEach(x=>{const k=(x.area||'Unknown area').split(',')[0].trim();(g[k]=g[k]||[]).push(x);});return Object.entries(g).sort((a,b)=>b[1].length-a[1].length);};
+ const off=devs.filter(x=>x.online===0&&!x.no_alerts),nodata=devs.filter(x=>x.last_error&&!/^ALARM/.test(x.last_error)),due=als.filter(a=>a.due),
+  clean=als.filter(a=>a.type==='CLEANING'||a.type==='LOW_GEN'),fault=als.filter(a=>a.type==='FAULT'),grid=als.filter(a=>a.type==='GRID');
+ const withY=devs.filter(x=>x.kw&&x.today_kwh!=null).map(x=>({...x,y:x.today_kwh/x.kw})).sort((a,b)=>b.y-a.y);
+ const on=devs.filter(x=>x.online===1).length,live=devs.reduce((a,x)=>a+(+x.last_power_kw||0),0),tk=devs.reduce((a,x)=>a+(+x.today_kwh||0),0);
+ TODAY={on,n:devs.length,live,tk,off,due,clean,fault,grid,nodata,byArea};
+ const row=x=>`<div class="trow"><div class="nm"><a href="#" class="lnk" onclick="dev(${x.id});return false">${x.customer||x.serial}</a><div class="sub">${x.brand} · ${x.serial}${x.offline_since?' · offline since '+new Date(x.offline_since).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):''}</div></div>${x.phone?`<a class="call" href="tel:${x.phone}">📞 ${x.phone}</a>`:''}</div>`;
+ const devOf=a=>devs.find(d=>d.serial===a.serial)||{id:0,serial:a.serial,customer:a.customer,brand:a.brand,area:a.area,phone:a.phone};
+ const sec=(title,list,empty)=>`<div class="tsec"><h4>${title} (${list.length})</h4>${list.length?byArea(list).map(([ar,l])=>`<div class="tgrp"><div class="ar">${ar} · ${l.length}</div>${l.map(row).join('')}</div>`).join(''):`<p class="small">${empty}</p>`}</div>`;
+ $('tBody').innerHTML=`<div class="core">${[[`${on}/${devs.length}`,'Online now'],[`${live.toFixed(1)} kW`,'Live power'],[`${Math.round(tk)} kWh`,'Generated today'],[String(off.length),'Offline'],[String(due.length),'Questions due']].map(([v,l])=>`<div class="gauge"><div><div class="gv">${v}</div><div class="gl">${l}</div></div></div>`).join('')}</div>
+ ${sec('⚠ Inverter faults – engineer needed',fault.map(devOf),'No inverter faults.')}
+ ${sec('● Offline now',off,'Nothing offline right now.')}
+ ${sec('🧽 Cleaning / low generation – plan visits by area',clean.map(devOf),'No cleaning or low-generation alerts.')}
+ ${sec('⚡ Grid / power cut (no engineer, wait)',grid.map(devOf),'No grid faults.')}
+ ${sec('❓ Follow-up questions due',due.map(devOf),'No questions due.')}
+ ${nodata.length?sec('No data from inverter cloud',nodata,''):''}
+ <div class="tsec"><h4>Best & weakest today (kWh per kW)</h4><div class="two-col" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">
+  <div class="tgrp"><div class="ar">Top 5</div>${withY.slice(0,5).map(x=>`<div class="trow"><div class="nm"><a href="#" class="lnk" onclick="dev(${x.id});return false">${x.customer||x.serial}</a></div><b style="color:var(--ok)">${x.y.toFixed(2)}</b></div>`).join('')||'<p class="small">–</p>'}</div>
+  <div class="tgrp"><div class="ar">Weakest 5 (online)</div>${withY.filter(x=>x.online===1).slice(-5).reverse().map(x=>`<div class="trow"><div class="nm"><a href="#" class="lnk" onclick="dev(${x.id});return false">${x.customer||x.serial}</a></div><b style="color:var(--amber)">${x.y.toFixed(2)}</b></div>`).join('')||'<p class="small">–</p>'}</div></div></div>`;}
+function waShare(){if(!TODAY)return;const t=TODAY,dt=new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+ const names=(l,max=15)=>t.byArea(l).map(([ar,x])=>`• ${ar}: ${x.slice(0,max).map(y=>y.customer||y.serial).join(', ')}`).join('\n');
+ const devOf=a=>RDATA.find(d=>d.serial===a.serial)||{customer:a.customer,serial:a.serial,area:a.area};
+ let m=`*Smart Evergreen – ${dt}*\nOnline ${t.on}/${t.n} · Live ${t.live.toFixed(1)} kW · Today ${Math.round(t.tk)} kWh`;
+ if(t.fault.length)m+=`\n\n*Faults – engineer needed (${t.fault.length})*\n`+names(t.fault.map(devOf));
+ if(t.off.length)m+=`\n\n*Offline (${t.off.length})*\n`+names(t.off);
+ if(t.clean.length)m+=`\n\n*Cleaning / low generation (${t.clean.length})*\n`+names(t.clean.map(devOf));
+ if(t.grid.length)m+=`\n\n*Grid fault – wait (${t.grid.length})*\n`+names(t.grid.map(devOf));
+ if(t.due.length)m+=`\n\nFollow-up questions due: ${t.due.length}`;
+ window.open('https://wa.me/?text='+encodeURIComponent(m.slice(0,3500)),'_blank','noopener');}

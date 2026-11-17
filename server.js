@@ -174,6 +174,11 @@ app.post('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const ok=new Set
 app.post('/api/rms/test/:brand',auth(['admin']),W(async(req,res)=>{const c=RMS.connectors[req.params.brand];if(!c)return res.status(404).json({error:'unknown'});
  try{if(!RMS.configured(req.params.brand))throw new Error('credentials not set');let msg='Connected';if(c.testInfo)msg=await c.testInfo();else if(c.token)await c.token();res.json({ok:true,message:msg});}catch(e){res.json({ok:false,message:e.message});}}));
 app.get('/api/rms/brands',auth(),(req,res)=>res.json(RMS.BRANDS.map(b=>({brand:b,configured:RMS.configured(b)}))));
+// One inverter: details + last 30 days + alert history (for the detail panel)
+app.get('/api/rms/devices/:id/history',auth(),W(async(req,res)=>{const d=await one('SELECT d.*,COALESCE(p.customer,d.plant_name) customer,p.phone,p.pincode,p.address,COALESCE(p.area,d.city) area,COALESCE(d.capacity_kw,p.capacity_kw) kw FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id WHERE d.id=?',[req.params.id]);
+ if(!d)return res.status(404).json({error:'not found'});const from=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
+ res.json({device:d,days:await q('SELECT day,kwh,yld,peer_median,verdict FROM rms_daily WHERE serial=? AND day>=? ORDER BY day',[d.serial,from]),
+  alerts:await q('SELECT id,type,message,status,opened_at,resolved_at,resolved_by,engineer FROM alerts WHERE serial=? ORDER BY opened_at DESC LIMIT 20',[d.serial])});}));
 app.get('/api/rms/devices',auth(),W(async(req,res)=>res.json(await q('SELECT d.*,COALESCE(p.customer,d.plant_name) customer,p.phone,p.pincode,COALESCE(p.area,d.city) area,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,COALESCE(d.capacity_kw,p.capacity_kw) kw,(SELECT GROUP_CONCAT(DISTINCT a.type) FROM alerts a WHERE a.serial=d.serial AND a.status=\'OPEN\') alerts FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id ORDER BY d.project_ext_id IS NULL DESC,d.id DESC'))));
 app.post('/api/rms/devices',auth(['admin','manager']),W(async(req,res)=>{let {project_ext_id,brand,serial,logger_serial,capacity_kw,customer,phone,pincode}=req.body;
  serial=String(serial||'').trim();if(!serial||!RMS.BRANDS.includes(brand))return res.status(400).json({error:'brand and serial required'});

@@ -110,6 +110,17 @@ details.fold>summary{cursor:pointer;font:600 11px var(--mono);letter-spacing:1.6
 details.fold>summary::before{content:'▸ ';color:var(--neon)}details.fold[open]>summary::before{content:'▾ '}
 .qf{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px;padding:12px;background:rgba(5,12,17,.7);border:1px solid var(--line);border-radius:10px}
 .qf>b{flex-basis:100%;font-family:var(--sans)!important;font-size:13.5px!important;letter-spacing:0!important}.qf select,.qf input{flex:1 1 180px;width:auto;margin:0}.qf button.b{margin:0;width:auto}
+/* Detail drawer, today board */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(560px,100vw);background:rgba(7,14,20,.97);border-left:1px solid var(--line);box-shadow:-20px 0 60px rgba(0,0,0,.6),0 0 30px rgba(56,240,200,.08);z-index:5000;transform:translateX(105%);transition:transform .25s ease;overflow:auto;padding:18px 20px 40px;backdrop-filter:blur(10px)}
+.drawer.open{transform:none}.dhead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+#dTitle b{font:700 16px var(--head);letter-spacing:1px}
+.kv{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0}.kv div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px}.kv b{display:block;font:700 17px var(--mono)}.kv span{font:500 10px var(--mono);letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.chart{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 10px 4px;margin:10px 0}
+.tsec{margin:18px 0}.tsec h4{margin-bottom:10px}.tgrp{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:8px 0}
+.tgrp .ar{font:600 11px var(--mono);letter-spacing:1.4px;text-transform:uppercase;color:var(--cyan);margin-bottom:6px}.trow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--line2)}.trow:first-of-type{border-top:0}
+.trow .nm{flex:1 1 180px}.trow a.call{color:var(--neon);text-decoration:none;font-family:var(--mono);font-size:12px}
+a.lnk{color:#eafffa;text-decoration:none;border-bottom:1px dashed rgba(56,240,200,.4)}a.lnk:hover{color:var(--neon)}
+@media print{.drawer{display:none}}
 /* AI core gauges */
 .core{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0 6px}
 .gauge{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px 12px;display:flex;align-items:center;gap:12px;box-shadow:var(--glow);overflow:hidden}
@@ -142,7 +153,7 @@ details.fold>summary::before{content:'▸ ';color:var(--neon)}details.fold[open]
 <label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')login()">
 <button class="b" onclick="login()">Login</button><p id="lerr" style="color:red"></p></div></div>
 <header><b class="brand"><a href="/"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#38f0c8" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#3ec7ff"/></svg><span>Smart Evergreen</span></a><small>AI · Field Ops</small></b>
-<button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
+<button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="todayPage" onclick="show(this)">◉ Today</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
 <button data-p="importPage" onclick="show(this)" class="adm">Import</button><button data-p="usersPage" onclick="show(this)" class="adm">Users</button>
 <button data-p="docsPage" onclick="show(this)">API Docs</button><span id="me"></span><button onclick="logout()">Logout</button></header>
 <main>
@@ -181,7 +192,7 @@ details.fold>summary::before{content:'▸ ';color:var(--neon)}details.fold[open]
 <div><button class="b" onclick="planner()">Show</button></div><div><button class="b g" onclick="window.print()">Print</button></div></div><div id="planBody"></div></div>
 <div id="rmsPage" class="page"><h3>Inverter remote monitoring</h3><div id="brandBox" class="small"></div>
 <div id="rCore" class="core"></div><div id="rStats" class="chips"></div>
-<div class="toolbar"><input id="rFind" placeholder="Search customer, serial, city, phone…" oninput="rDraw()"><select id="rSort" onchange="rDraw()"><option value="status">Problems first</option><option value="gen">Lowest generation first</option><option value="name">Name A–Z</option><option value="kw">Biggest system first</option></select><button class="b g" onclick="rRefresh()">↻ Refresh now</button></div>
+<div class="toolbar"><input id="rFind" placeholder="Search customer, serial, city, phone…" oninput="rDraw()"><select id="rSort" onchange="rDraw()"><option value="status">Problems first</option><option value="gen">Lowest generation first</option><option value="name">Name A–Z</option><option value="kw">Biggest system first</option></select><button class="b g" onclick="rRefresh()">↻ Refresh now</button><button class="b g" onclick="rCsv()">⬇ CSV</button></div>
 <div id="rTbl"></div>
 <details id="unmapWrap" class="fold"><summary id="unmapSum">Auto-imported inverters</summary><div id="unmapBox"></div></details>
 <details class="fold"><summary>Link an inverter manually</summary><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
@@ -191,6 +202,9 @@ details.fold>summary::before{content:'▸ ';color:var(--neon)}details.fold[open]
 <div><label>Inverter serial *</label><input id="rSn"></div><div><label>Data logger serial</label><input id="rLog"></div><div><label>System kW</label><input id="rKw" type="number" style="width:80px"></div>
 <div><button class="b" onclick="rAdd()">Link</button></div></div></details>
 <details id="connWrap" class="fold"><summary>Inverter company connections (keys)</summary><div id="connBox"></div></details></div>
+<div id="todayPage" class="page"><h3>Today's action board</h3><p class="small">Everything that needs a person today – grouped by area so one engineer can cover nearby sites in one trip.</p>
+<div class="toolbar"><button class="b" onclick="waShare()">Share summary on WhatsApp</button><button class="b g" onclick="todayPage()">↻ Refresh</button><button class="b g" onclick="window.print()">Print</button></div><div id="tBody"></div></div>
+<div id="drawer" class="drawer"><div class="dhead"><div id="dTitle"></div><button class="mini" onclick="closeDev()">✕ Close</button></div><div id="dBody"></div></div>
 <div id="alertPage" class="page"><h3>Inverter alerts &amp; follow-up</h3>
 <p class="small">Alerts open automatically from RMS data and close automatically when the inverter is normal again. Orange cards = question due (asked again every 24 hours until resolved).</p>
 <div class="toolbar"><select id="aStatus" onchange="alertsPage()"><option value="OPEN">Open alerts</option><option value="RESOLVED">Resolved</option></select><input id="aFind" placeholder="Search customer, serial, area, phone…" oninput="aDraw()"><button class="b g" onclick="api('/api/rms/evaluate',{method:'POST',body:'{}'}).then(alertsPage)">Run performance check now</button></div>
