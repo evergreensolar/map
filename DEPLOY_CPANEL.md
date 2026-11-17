@@ -71,6 +71,9 @@ Wait 10 seconds and open the site again, then login.
 - The app header shows "Inverter data updated X min ago". If it turns orange (over 40 min), the background job has stopped – check the Hostinger cron.
 
 ## Growatt online / offline
-- Online/offline comes from Growatt's device list (`lost` flag) – the same thing the Growatt portal counts. Plant power alone is often 0, so it is no longer used to decide offline.
-- If the plant reports 0 W while the inverter is online, live power is read from the inverter itself (MIN/MIC/TL-X, MAX or standard inverter).
-- An OFFLINE alert opens only after the inverter has stayed offline for 45 minutes in daytime (`OFFLINE_ALERT_MINUTES`).
+- Offline when: Growatt marks the device "lost", OR in daytime (9:30–16:30 IST) the plant shows 0 kW and 0 kWh today / kWh not rising.
+- Online when: power > 0 (plant, plant list or the inverter itself) or today's kWh is rising.
+- Night: shown as "Idle (night)" – no alerts at night.
+- Growatt rate limit: calls are spaced 1.5 s apart (`GROWATT_GAP_MS`). If Growatt still says error_frequently_access, that round stops and old data is kept – no false "No data".
+- The Test button shows the reason ("decision") for each inverter.
+- An OFFLINE alert opens only after 45 minutes offline in daytime (`OFFLINE_ALERT_MINUTES`).

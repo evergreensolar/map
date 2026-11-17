@@ -12,12 +12,14 @@ const connectors={
   env:['GROWATT_TOKEN','GROWATT_BASE'],
   base(){let b=(E('GROWATT_BASE')||'https://openapi.growatt.com/v1').trim().replace(/\/+$/,'');if(!/\/v1$/.test(b))b+='/v1';return b;},
   lastRaw:null,
-  async get(path,retry=1){let r,txt;
+  lastCall:0,
+  async get(path,retry=1){let r,txt;const gap=+(E('GROWATT_GAP_MS')||1500),w=this.lastCall+gap-Date.now();if(w>0)await sleep(w);this.lastCall=Date.now(); // Growatt blocks fast callers (error_frequently_access)
    try{r=await fetch(this.base()+path,{headers:{token:String(E('GROWATT_TOKEN')).trim()},signal:AbortSignal.timeout(25000)});txt=await r.text();}
    catch(e){throw new Error('Growatt: cannot reach '+this.base()+' ('+(e.name==='TimeoutError'?'timeout':e.message)+')');}
    let j;try{j=JSON.parse(txt);}catch(e){throw new Error('Growatt: HTTP '+r.status+', not JSON: '+txt.replace(/\s+/g,' ').slice(0,200));}
    this.lastRaw=j;const code=j.error_code!=null?+j.error_code:0;
-   if(code===10012&&retry>0){await sleep(5000);return this.get(path,retry-1);} // error_frequently_access
+   if(code===10012&&retry>0){await sleep(8000);return this.get(path,retry-1);} // error_frequently_access
+   if(code===10012){const e=new Error('Growatt: rate limit (error_frequently_access) – will retry next round');e.rate=true;throw e;}
    if(code!==0){const hint={10011:' (token wrong, or account is on another Growatt server – check GROWATT_BASE)',10012:' (too many requests – Growatt rate limit, try again in a few minutes)'}[code]||'';
     throw new Error('Growatt '+code+': '+(j.error_msg||'error')+hint);}
    if(!r.ok)throw new Error('Growatt: HTTP '+r.status);return j.data||{};},
@@ -54,12 +56,27 @@ const connectors={
    if(dev?.plant_id){const d=await this.get(`/plant/data?plant_id=${dev.plant_id}`);let p=num(d.current_power??d.currentPower??d.power);const cap=dev.capacity_kw||null;
     const toKw=w=>w!=null&&(cap?w>cap*1.5:w>100)?w/1000:w; // W -> kW
     p=toKw(p);
-    // Online/offline exactly like the Growatt portal: device list "lost" flag (plant power alone is often 0/stale)
-    let devs=[];try{devs=this.list(await this.get(`/device/list?plant_id=${dev.plant_id}&page=1&perpage=100`),'devices','device_list','list');}catch(e){}
-    let online=devs.length?devs.some(x=>!this.isLost(x)):(p==null?null:p>0),src='plant';
-    if(online&&!p){let w=0,got=false;for(const x of devs.filter(x=>!this.isLost(x)).slice(0,3)){const r=await this.devPower(x);if(r){w+=r.w;got=true;}}if(got){p=toKw(w);src='device';}}
-    return{power_kw:p,today_kwh:num(d.today_energy??d.todayEnergy??d.eToday),total_kwh:num(d.total_energy??d.totalEnergy??d.eTotal),online,
-     raw:{plant_data:d,power_from:src,devices:devs.map(x=>({sn:x.device_sn,type:x.type,lost:x.lost,status:x.status,last_update_time:x.last_update_time,model:x.model}))}};}
+    const today=num(d.today_energy??d.todayEnergy??d.eToday),total=num(d.total_energy??d.totalEnergy??d.eTotal);
+    // Plant list (1 call for ALL plants, cached 10 min) – same list the Growatt portal shows
+    let pl=null;try{if(!this.plCache||Date.now()-this.plCache.t>10*60e3){const m={};(await this.plants()).forEach(x=>m[this.pid(x)]=x);this.plCache={t:Date.now(),m};}pl=this.plCache.m[String(dev.plant_id)]||null;}catch(e){if(e.rate)throw e;}
+    if(!p&&pl){const v=toKw(num(pl.current_power??pl.currentPower));if(v)p=v;}
+    // Device list (cached 30 min per plant) – serials, type and the "lost" flag when Growatt sends it
+    this.dlCache=this.dlCache||{};let dc=this.dlCache[dev.plant_id];
+    if(!dc||Date.now()-dc.t>30*60e3){try{dc={t:Date.now(),l:this.list(await this.get(`/device/list?plant_id=${dev.plant_id}&page=1&perpage=100`),'devices','device_list','list')};this.dlCache[dev.plant_id]=dc;}catch(e){if(e.rate)throw e;dc=dc||{l:[]};}}
+    const devs=dc.l,lostKnown=devs.filter(x=>x.lost!=null&&x.lost!==''),allLost=lostKnown.length&&lostKnown.length===devs.length&&devs.every(x=>this.isLost(x));
+    const h=((Date.now()/36e5)+5.5)%24,day=h>=9.5&&h<16.5,prev=dev.today_kwh!=null?+dev.today_kwh:null;
+    let src='plant';
+    if(!allLost&&!p&&day&&devs.length){const x=devs.find(x=>!this.isLost(x));if(x){try{const r=await this.devPower(x);if(r&&r.w>0){p=toKw(r.w);src='device';}}catch(e){if(e.rate)throw e;}}}
+    // Decision (shown in Test): lost=true -> offline; daytime with no power and nothing generated today -> offline; power or rising kWh -> online
+    let online,why;
+    if(allLost){online=false;why='Growatt says lost (offline)';}
+    else if(p>0){online=true;why='power '+p+' kW';}
+    else if(day&&(!today||today===0)){online=false;why='daytime, 0 kW and 0 kWh today';}
+    else if(day&&today>0&&prev!=null&&today>prev){online=true;why='kWh rising '+prev+' -> '+today;}
+    else if(day){online=false;why='daytime, 0 kW and kWh not rising';}
+    else{online=null;why='night / early morning';}
+    return{power_kw:p,today_kwh:today,total_kwh:total,online,
+     raw:{decision:why,power_from:src,plant_data:d,plant_list_entry:pl,devices:devs.map(x=>({sn:x.device_sn,type:x.type,lost:x.lost,status:x.status,last_update_time:x.last_update_time,model:x.model}))}};}
    // No plant id yet (added manually by serial): try the standard inverter endpoint, then MIN/TL-X models
    let d,err;for(const p of [`/device/inverter/last_new_data?device_sn=`,`/device/tlx/tlx_last_data?tlx_sn=`]){try{d=await this.get(p+encodeURIComponent(sn));if(d&&Object.keys(d).length)break;}catch(e){err=e;d=null;}}
    if(!d||!Object.keys(d).length)throw err||new Error('Growatt: no data for '+sn+' – use "Import all Growatt plants now"');

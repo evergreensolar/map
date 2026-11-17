@@ -245,7 +245,7 @@ async function rmsPage(skipConn){if(!skipConn)connPage();unmapped();const b=awai
 let RDATA=[],RF='';
 const f2=(v,d=1)=>v==null||v===''||isNaN(+v)?'–':(+v).toFixed(d).replace(/\.0+$/,'');
 function ago(t){if(!t)return'never';const m=Math.round((Date.now()-new Date(t))/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';}
-function rState(x){if(x.last_error&&!/^ALARM/.test(x.last_error))return['err','No data'];if(x.last_error)return['bad','Alarm'];if(x.online===1)return['ok','Online'];if(x.online===0)return['bad','Offline'];return['wait','Waiting'];}
+function rState(x){if(x.last_error&&!/^ALARM/.test(x.last_error))return['err','No data'];if(x.last_error)return['bad','Alarm'];if(x.online===1)return['ok','Online'];if(x.online===0)return['bad','Offline'];return['wait','Idle (night)'];}
 function rDraw(){const low=+(window.LOWGEN||2.5),late=new Date().getHours()>=17,qq=($('rFind').value||'').toLowerCase().trim();
  const yieldOf=x=>x.kw&&x.today_kwh!=null?x.today_kwh/x.kw:null;
  const tests={'':()=>true,ok:x=>rState(x)[0]==='ok',bad:x=>['bad','err'].includes(rState(x)[0]),alerts:x=>!!x.alerts,low:x=>late&&yieldOf(x)!=null&&yieldOf(x)<low,unlinked:x=>!x.project_ext_id,ow:x=>!!x.no_alerts};

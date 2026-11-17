@@ -224,7 +224,7 @@ async function pollRMS(maxMs=240000){const t0=Date.now();await loadSettings();
     await q('UPDATE rms_devices SET last_power_kw=?,today_kwh=?,total_kwh=?,online=?,last_fetch=?,last_error=?,fail_count=0,offline_since=? WHERE id=?',[r.power_kw!=null?+(+r.power_kw).toFixed(3):null,r.today_kwh,r.total_kwh,r.online==null?null:(r.online?1:0),now(),r.alarm?('ALARM: '+r.alarm).slice(0,300):null,d.offline_since,d.id]);
     if(r.today_kwh!=null)await q('INSERT INTO rms_daily(serial,day,kwh) VALUES(?,?,?) ON DUPLICATE KEY UPDATE kwh=VALUES(kwh)',[d.serial,istDay(),r.today_kwh]);
     await evalAlerts(d,r,null,0);n++;}
-   catch(e){const f=(d.fail_count||0)+1;await q('UPDATE rms_devices SET last_error=?,last_fetch=?,fail_count=? WHERE id=?',[String(e.message).slice(0,300),now(),f,d.id]);await evalAlerts(d,null,e.message,f);}
+   catch(e){if(e.rate){console.log(brand+': rate limited, stopping this round');break;}const f=(d.fail_count||0)+1;await q('UPDATE rms_devices SET last_error=?,last_fetch=?,fail_count=? WHERE id=?',[String(e.message).slice(0,300),now(),f,d.id]);await evalAlerts(d,null,e.message,f);}
    await new Promise(r=>setTimeout(r,800));}}));return n;}
 // ---- Smart performance: nearby systems + weather (Open-Meteo, free) + own 30-day normal ----
 function dist(a,b,c,d){const t=Math.PI/180,x=Math.sin((c-a)*t/2)**2+Math.cos(a*t)*Math.cos(c*t)*Math.sin((d-b)*t/2)**2;return 12742*Math.asin(Math.sqrt(x));}
