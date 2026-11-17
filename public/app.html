@@ -205,7 +205,7 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <div id="side">
 <h4>Layers</h4>
 <label><input type="checkbox" id="lEnq" checked style="width:auto"> Enquiries by pincode</label>
-<label><input type="checkbox" id="lProj" checked style="width:auto"> Projects</label><label><input type="checkbox" id="lSvc" checked style="width:auto"> Service tickets (maintenance / cleaning / AMC)</label>
+<label><input type="checkbox" id="lSurv" checked style="width:auto"> Survey requests (from ERP enquiries)</label><label><input type="checkbox" id="lProj" checked style="width:auto"> Projects</label><label><input type="checkbox" id="lSvc" checked style="width:auto"> Service tickets (maintenance / cleaning / AMC)</label>
 <label>Project stages</label><select id="fStage" multiple size="10"></select>
 <label>Date field</label><select id="fDateField"><option value="stage_date">Current stage date</option><option value="survey_date">Survey date</option><option value="dispatch_date">Dispatch date</option><option value="installation_date">Installation date</option><option value="completion_date">Completion date</option><option value="created_date">Project created</option></select>
 <label>From</label><input type="date" id="fFrom"><label>To</label><input type="date" id="fTo">
@@ -272,7 +272,7 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <div class="toolbar"><select id="aStatus" onchange="alertsPage()"><option value="OPEN">Open alerts</option><option value="RESOLVED">Resolved</option></select><input id="aFind" placeholder="Search customer, serial, area, phone…" oninput="aDraw()"><button class="b g" onclick="api('/api/rms/evaluate',{method:'POST',body:'{}'}).then(alertsPage)">Run performance check now</button></div>
 <div id="aChips" class="chips"></div><div id="aList"></div></div>
 <div id="areaPage" class="page"><h3>Area / Pincode summary</h3><p class="small">Use this to club site surveys of the same area on the same day.</p><div id="areaTbl"></div></div>
-<div id="importPage" class="page"><h3>Excel import (until ERP API is live)</h3>
+<div id="importPage" class="page"><h3>Data check &amp; import</h3><div id="dataStatus"></div><h4>Excel import (until ERP API is live)</h4>
 <p class="small">Column names = field names in API Docs (e.g. project_id, customer_name, pincode, lat, lng, stage, stage_date ...). Spaces/case don't matter.</p>
 <label>Type</label><select id="impType" style="width:250px"><option>projects</option><option>enquiries</option><option>service</option><option>pincodes</option></select>
 <input type="file" id="impFile" accept=".xlsx,.xls,.csv" style="width:250px"><button class="b" style="width:250px" onclick="imp()">Upload</button><pre id="impRes"></pre></div>

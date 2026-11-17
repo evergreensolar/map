@@ -30,15 +30,20 @@ const SCHEMA=[
 `CREATE TABLE IF NOT EXISTS web_enquiries(id INT AUTO_INCREMENT PRIMARY KEY,ref VARCHAR(30) UNIQUE,name VARCHAR(120),phone VARCHAR(15),email VARCHAR(120),pincode VARCHAR(10),segment VARCHAR(20),monthly_bill VARCHAR(30),message VARCHAR(600),page VARCHAR(200),ip VARCHAR(60),created_at VARCHAR(30),erp_status VARCHAR(20) DEFAULT 'PENDING',erp_response VARCHAR(300),INDEX(created_at))`,
 `CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`,
 `CREATE TABLE IF NOT EXISTS routes(id INT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(200),route_date VARCHAR(10),person VARCHAR(120),phone VARCHAR(20),purpose VARCHAR(40),data MEDIUMTEXT,created_by VARCHAR(120),created_at VARCHAR(30),INDEX(route_date))`];
-async function initDB(){for(const s of SCHEMA)await q(s);
+async function initDB(){for(const s of SCHEMA)await q(s);setTimeout(()=>seedPincodes().catch(()=>{}),2000);
  for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)','offline_since VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
+// Bundled India Post pincode locations (West Bengal + Sikkim) – no internet lookup needed for these
+async function seedPincodes(){try{const d=JSON.parse(fs.readFileSync(path.join(__dirname,'data','pincodes-wb.json'),'utf8'));const have=(await one("SELECT COUNT(*) n FROM pincodes WHERE source='indiapost'")).n;
+ if(have<Object.keys(d).length){const rows=Object.entries(d).map(([p,[la,ln,ar]])=>[p,la,ln,ar,'indiapost']);for(let i=0;i<rows.length;i+=300)await q('INSERT IGNORE INTO pincodes(pincode,lat,lng,area,source) VALUES ?',[rows.slice(i,i+300)]);}
+ }catch(e){console.error('pincode seed',e.message);}await fillMissingLocations();}
+async function fillMissingLocations(){let n=0;for(const t of ['projects','enquiries','service'])n+=(await q(`UPDATE ${t} x JOIN pincodes p ON p.pincode=TRIM(x.pincode) SET x.lat=p.lat,x.lng=p.lng,x.area=COALESCE(x.area,p.area) WHERE x.lat IS NULL AND p.lat IS NOT NULL`)).affectedRows;return n;}
 // ---- Stage normalisation (Evergreen workflow) ----
 const STAGES=['ENQUIRY','SURVEY_REQUESTED','SURVEY_SCHEDULED','SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE','PROJECT_CREATED','AGREEMENT_PENDING','DISPATCH_PENDING','INSTALLATION_PENDING','NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED','OTHER'];
 function normStage(s){const t=String(s||'').toUpperCase().replace(/[^A-Z]+/g,'_');if(STAGES.includes(t))return t;
  if(/NET_?METER/.test(t))return 'NET_METERING_PENDING';if(/DOCUMENT/.test(t))return 'DOCUMENT_SENDING';
  if(/SURVEY/.test(t))return /DONE|SUBMIT|COMPLET/.test(t)?'SURVEY_DONE':/SCHEDUL|ASSIGN|ENGINEER/.test(t)?'SURVEY_SCHEDULED':'SURVEY_REQUESTED';
  if(/DESIGN/.test(t))return /DONE|COMPLET/.test(t)?'DESIGN_DONE':'DESIGN_PENDING';if(/AGREEMENT/.test(t))return 'AGREEMENT_PENDING';
- if(/DISPATCH/.test(t))return 'DISPATCH_PENDING';if(/INSTALL/.test(t))return 'INSTALLATION_PENDING';if(/PROJECT_?CREAT|CONFIRM/.test(t))return 'PROJECT_CREATED';
+ if(/DISPATCH|MATERIAL|PROCURE|PURCHASE|DELIVER/.test(t))return 'DISPATCH_PENDING';if(/INSTALL/.test(t))return 'INSTALLATION_PENDING';if(/PROJECT_?CREAT|CONFIRM/.test(t))return 'PROJECT_CREATED';
  if(/COMPLET|CLOSED|HANDOVER/.test(t))return 'COMPLETED';if(/ENQUIR|INQUIR|LEAD/.test(t))return 'ENQUIRY';return 'OTHER';}
 function toISODate(v){if(!v)return null;if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);return d?`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`:null;}
  const s=String(v).trim();let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];
@@ -80,8 +85,10 @@ async function geocodeSites(max=8){const rows=await q("SELECT DISTINCT city FROM
  return done;}
 // Pincode geocoding via free OpenStreetMap Nominatim (run from cron, max 1 req/sec)
 async function geocodeBatch(max=20){const pins=await q(`SELECT DISTINCT pincode FROM (SELECT pincode FROM projects WHERE lat IS NULL UNION SELECT pincode FROM enquiries WHERE lat IS NULL UNION SELECT pincode FROM service WHERE lat IS NULL) x
- WHERE pincode REGEXP '^[0-9]{6}$' AND pincode NOT IN (SELECT pincode FROM pincodes) LIMIT ?`,[max]);let done=0;
- for(const {pincode} of pins){try{const r=await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${pincode}&country=India&format=json&limit=1`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'}});const j=await r.json();
+ WHERE pincode REGEXP '^[0-9]{6}$' AND pincode NOT IN (SELECT pincode FROM pincodes) AND CONCAT('geofail:',pincode) NOT IN (SELECT k FROM kv_state WHERE v>?) LIMIT ?`,[new Date(Date.now()-7*864e5).toISOString(),max]);let done=0;
+ for(const {pincode} of pins){try{const r=await fetch(`https://nominatim.openstreetmap.org/search?postalcode=${pincode}&country=India&format=json&limit=1`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'}});let j=await r.json();
+  if(!j[0]){await new Promise(r=>setTimeout(r,1200));j=await (await fetch(`https://nominatim.openstreetmap.org/search?q=${pincode}%20India&countrycodes=in&format=json&limit=1`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'}})).json();}
+  if(!j[0])await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',['geofail:'+pincode,new Date().toISOString()]);
   if(j[0]){const area=(j[0].display_name||'').split(',').slice(0,2).join(',').trim();await q('REPLACE INTO pincodes(pincode,lat,lng,area,source) VALUES(?,?,?,?,?)',[pincode,+j[0].lat,+j[0].lon,area,'osm']);await fillPin(pincode,+j[0].lat,+j[0].lon);done++;}}catch(e){}
   await new Promise(r=>setTimeout(r,1200));}return done;}
 
@@ -126,13 +133,30 @@ app.get('/api/projects',auth(),W(async(req,res)=>{const {stage,from,to,team,engi
 app.get('/api/enquiries/by-pincode',auth(),W(async(req,res)=>{const {from,to,source}=req.query;let s='SELECT pincode,MAX(area) area,AVG(lat) lat,AVG(lng) lng,COUNT(*) count FROM enquiries WHERE lat IS NOT NULL',a=[];
  if(from){s+=' AND enquiry_date>=?';a.push(from);}if(to){s+=' AND enquiry_date<=?';a.push(to);}if(source){s+=' AND source=?';a.push(source);}
  res.json(await q(s+' GROUP BY pincode ORDER BY count DESC',a));}));
+// Survey requests kept as ENQUIRIES in the ERP (status mentions survey and is not done)
+const SURVEY_ENQ="status REGEXP 'survey' AND status NOT REGEXP 'done|complet|submit|cancel|closed|reject'";
+app.get('/api/enquiries/survey',auth(),W(async(req,res)=>res.json((await q(`SELECT ext_id,customer,phone,pincode,area,lat,lng,status,enquiry_date,assigned_to,source FROM enquiries WHERE ${SURVEY_ENQ} ORDER BY enquiry_date DESC LIMIT 2000`)).map(e=>({...e,stage:normStage(e.status)})))));
+// Data check for admins: what arrived, what has no location, which stages were not recognised
+app.get('/api/data-status',auth(['admin','manager']),W(async(req,res)=>{const c=async(t)=>(await one(`SELECT COUNT(*) n,SUM(lat IS NOT NULL) located FROM ${t}`));
+ const push={};for(const r of await q("SELECT k,v FROM kv_state WHERE k LIKE 'erp_push_%'"))push[r.k.slice(9)]=JSON.parse(r.v);
+ res.json({projects:await c('projects'),enquiries:await c('enquiries'),service:await c('service'),
+  survey_enquiries:(await one(`SELECT COUNT(*) n FROM enquiries WHERE ${SURVEY_ENQ}`)).n,
+  project_stages:await q('SELECT stage,COUNT(*) n FROM projects GROUP BY stage ORDER BY n DESC'),
+  unrecognised_stages:await q("SELECT stage_label,COUNT(*) n FROM projects WHERE stage='OTHER' GROUP BY stage_label ORDER BY n DESC LIMIT 20"),
+  enquiry_statuses:await q('SELECT status,COUNT(*) n FROM enquiries GROUP BY status ORDER BY n DESC LIMIT 20'),
+  no_location_pincodes:await q(`SELECT pincode,COUNT(*) n FROM (SELECT pincode FROM projects WHERE lat IS NULL UNION ALL SELECT pincode FROM enquiries WHERE lat IS NULL UNION ALL SELECT pincode FROM service WHERE lat IS NULL) x GROUP BY pincode ORDER BY n DESC LIMIT 25`),
+  erp_last_push:push,erp_pull:(await one("SELECT v FROM kv_state WHERE k='erp_pull_last'"))?.v||null});}));
+app.post('/api/data-status/fix-locations',auth(['admin','manager']),W(async(req,res)=>{await seedPincodes();res.json({ok:true,located:await fillMissingLocations()});}));
 app.get('/api/summary',auth(),W(async(req,res)=>{
  const byArea=await q(`SELECT COALESCE(pincode,'-') pincode,MAX(area) area,SUM(stage IN ('SURVEY_REQUESTED','SURVEY_SCHEDULED')) survey_pending,SUM(stage IN ('DESIGN_PENDING','DESIGN_DONE')) design_pending,
   SUM(stage='AGREEMENT_PENDING') agreement_pending,SUM(stage='DISPATCH_PENDING') dispatch_pending,SUM(stage='INSTALLATION_PENDING') install_pending,SUM(stage='NET_METERING_PENDING') netmeter_pending,
   SUM(stage IN ('DOCUMENT_SENDING','COMPLETED')) completed,COUNT(*) total FROM projects GROUP BY pincode ORDER BY survey_pending DESC,total DESC`);
  const em=Object.fromEntries((await q('SELECT pincode,COUNT(*) c FROM enquiries GROUP BY pincode')).map(e=>[e.pincode,e.c]));
  const sm=Object.fromEntries((await q("SELECT pincode,COUNT(*) c FROM service WHERE status NOT IN ('CLOSED','DONE','COMPLETED') GROUP BY pincode")).map(e=>[e.pincode,e.c]));
- byArea.forEach(r=>{for(const k in r)if(typeof r[k]==='string'&&/^\d+$/.test(r[k])&&k!=='pincode')r[k]=+r[k];r.enquiries=em[r.pincode]||0;r.service_open=sm[r.pincode]||0;});
+ const svm=Object.fromEntries((await q(`SELECT pincode,COUNT(*) c FROM enquiries WHERE ${SURVEY_ENQ} GROUP BY pincode`)).map(e=>[e.pincode,e.c]));
+ const known=new Set(byArea.map(r=>String(r.pincode)));for(const [pin,c] of Object.entries(em))if(!known.has(String(pin))){const a=(await one('SELECT area FROM pincodes WHERE pincode=?',[pin]))?.area||null;byArea.push({pincode:pin||'-',area:a,survey_pending:0,design_pending:0,agreement_pending:0,dispatch_pending:0,install_pending:0,netmeter_pending:0,completed:0,total:0});}
+ byArea.forEach(r=>{for(const k in r)if(typeof r[k]==='string'&&/^\d+$/.test(r[k])&&k!=='pincode')r[k]=+r[k];r.enquiries=em[r.pincode]||0;r.service_open=sm[r.pincode]||0;r.survey_pending=(+r.survey_pending||0)+(svm[r.pincode]||0);});
+ byArea.sort((a,b)=>b.survey_pending-a.survey_pending||b.total-a.total||b.enquiries-a.enquiries);
  const col=async s=>(await q(s)).map(r=>Object.values(r)[0]);
  res.json({byArea,filters:{teams:await col('SELECT DISTINCT team FROM projects WHERE team IS NOT NULL'),engineers:await col('SELECT DISTINCT engineer FROM projects WHERE engineer IS NOT NULL'),sources:await col('SELECT DISTINCT source FROM enquiries WHERE source IS NOT NULL')},
   totalEnquiries:(await one('SELECT COUNT(*) c FROM enquiries')).c,ungeocoded:(await one("SELECT COUNT(DISTINCT pincode) c FROM projects WHERE lat IS NULL")).c});}));
@@ -159,10 +183,11 @@ app.post('/api/import/:type',auth(['admin','manager']),upload.single('file'),W(a
  res.json(await bulk(fn,rows.map(r=>Object.fromEntries(Object.entries(r).map(([k,v])=>[String(k).trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,''),v])))));}));
 // ---- ERP integration API (header X-API-Key) ----
 const erp=(req,res,next)=>ERP_KEY&&req.get('X-API-Key')===ERP_KEY?next():res.status(401).json({error:'invalid API key'});
+const logPush=async(t,r)=>{const o=JSON.parse((await one('SELECT v FROM kv_state WHERE k=?',['erp_push_'+t]))?.v||'{}');await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',['erp_push_'+t,JSON.stringify({at:now(),received:r.received,saved:r.saved,failed:r.errors.length,total_received:(o.total_received||0)+r.received}).slice(0,200)]);};
 const arr=b=>Array.isArray(b)?b:(Array.isArray(b?.data)?b.data:[b]);
-app.post('/erp/v1/enquiries',erp,W(async(req,res)=>res.json(await bulk(upsertEnquiry,arr(req.body)))));
-app.post('/erp/v1/projects',erp,W(async(req,res)=>res.json(await bulk(upsertProject,arr(req.body)))));
-app.post('/erp/v1/service',erp,W(async(req,res)=>res.json(await bulk(upsertService,arr(req.body)))));
+app.post('/erp/v1/enquiries',erp,W(async(req,res)=>{const r=await bulk(upsertEnquiry,arr(req.body));await logPush('enquiries',r);fillMissingLocations().catch(()=>{});res.json(r);}));
+app.post('/erp/v1/projects',erp,W(async(req,res)=>{const r=await bulk(upsertProject,arr(req.body));await logPush('projects',r);fillMissingLocations().catch(()=>{});res.json(r);}));
+app.post('/erp/v1/service',erp,W(async(req,res)=>{const r=await bulk(upsertService,arr(req.body));await logPush('service',r);fillMissingLocations().catch(()=>{});res.json(r);}));
 app.post('/erp/v1/pincodes',erp,W(async(req,res)=>res.json(await bulk(upsertPincode,arr(req.body)))));
 for(const [t,col] of [['projects','projects'],['enquiries','enquiries'],['service','service']])app.delete(`/erp/v1/${t}/:id`,erp,W(async(req,res)=>{await q(`DELETE FROM ${col} WHERE ext_id=?`,[req.params.id]);res.json({ok:true});}));
 app.get('/erp/v1/health',erp,(req,res)=>res.json({ok:true,time:now()}));
@@ -383,7 +408,7 @@ app.get('/api/admin/keys',auth(['admin']),(req,res)=>{const host=req.get('host')
 app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v FROM kv_state WHERE k='last_tick'");res.json({last_tick:r?r.v:null});}));
 async function runTick(force){if(running)return{skipped:'already running'};running=true;
  try{const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!force){running=false;return({skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});}}catch(e){running=false;throw e;}
- const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);
+ const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.located=await fillMissingLocations();out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);
   {const lp=await one("SELECT v FROM kv_state WHERE k='erp_pull_at'");if(!lp||Date.now()-Date.parse(lp.v)>55*60e3){await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_at',?)",[new Date().toISOString()]);try{out.erp_pull=await erpPull();}catch(e){out.erp_pull={error:e.message};}}}for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}

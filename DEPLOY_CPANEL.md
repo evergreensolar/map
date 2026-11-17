@@ -95,3 +95,9 @@ Wait 10 seconds and open the site again, then login.
 - Road distance and time come from the free OSRM service (router.project-osrm.org); if it is down, a straight-line estimate is shown.
 - "Send route on WhatsApp" opens WhatsApp with numbered stops, phone, address, a map link per stop and the full Google Maps route (long routes are split into parts of 10 stops – a Google Maps limit).
 - Routes can be saved and reopened; the Today board has "➜ Plan route" per area.
+
+## Locations & data check
+- `data/pincodes-wb.json`: India Post pincode locations for West Bengal + Sikkim (1,066 pincodes, from the MIT-licensed india-post-pincode package data). Loaded into the `pincodes` table at start; every record pushed by ERP without lat/lng gets its location from its pincode immediately. Keep the `data` folder in every deploy.
+- Other pincodes: looked up on OpenStreetMap by the background job; pincodes that cannot be found are retried after 7 days.
+- Survey requests that the ERP keeps as **enquiries** (status contains "survey" and not done/cancelled) are shown on the Map ("Survey requests" layer) and counted as survey pending in Area summary.
+- Import tab → **Data check**: totals, how many are on the map, last ERP push per type, stage names not recognised, enquiry status values, pincodes without location, and a "Fill missing locations" button.
