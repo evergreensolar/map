@@ -10,6 +10,8 @@ Every request must have these headers:
 Base URL: `https://<field-map-server>/erp/v1`
 
 Records are **upserted**: if the `enquiry_id` / `project_id` already exists it is updated, otherwise it is created.
+
+**Partial updates (since v1.1):** on an update, only the fields you send are changed. A field you leave out keeps its saved value – e.g. `[{"project_id":"EVG-101","stage":"Dispatch pending"}]` changes only the stage. To clear a field, send it explicitly as `null` (e.g. `"engineer": null`). New records are created with whatever fields are sent.
 So the ERP can send a record again every time anything changes (recommended: on every save / stage change), or send a full sync once a night.
 A body can be a single object, an array of objects, or `{ "data": [ ... ] }`. Recommended batch size: up to 500 records per call.
 
@@ -134,6 +136,6 @@ Customers submit the form on https://smart.evergreensolar.co.in. Two ways for th
 Required: customer_name, phone, email, pincode, segment (DOMESTIC or COMMERCIAL), monthly_bill (₹, average). Optional: message. (Field names can be changed to match the ERP API when it is shared.) ERP should reply HTTP 200. Failed sends are retried automatically for 3 days.
 
 **B. Pull:** `GET /erp/v1/web-enquiries?since=<ISO time of last fetch>` (header X-API-Key) returns new enquiries.
-Then `POST /erp/v1/web-enquiries/ack` with `["WEB-LZ8K2A", ...]` to mark them received.
+Then `POST /erp/v1/web-enquiries/ack` with `["WEB-LZ8K2A", ...]` to mark them received. Response: `{"ok":true,"acknowledged":<refs found>,"received":<refs sent>,"unknown":<refs not found>}`.
 
 Please use `ref` as the ERP enquiry reference so the same enquiry is not created twice.

@@ -46,22 +46,28 @@ function toISODate(v){if(!v)return null;if(typeof v==='number'){const d=XLSX.SSF
  const d=new Date(s);return isNaN(d)?null:d.toISOString().slice(0,10);}
 const lookupPin=pin=>pin?one('SELECT * FROM pincodes WHERE pincode=?',[String(pin)]):null;
 // ---- Upserts (ERP API + Excel) ----
+// Partial update: a field the ERP did not send keeps its saved value; send null explicitly to clear it
+async function upsertRow(table,r,src){const upd={};const has=n=>Object.prototype.hasOwnProperty.call(src,n);
+ const names=k=>k==='customer'?['customer_name','customer']:k==='stage_label'?['stage']:k==='project_ref'?['project_id','project_ref']:[k];
+ for(const [k,v] of Object.entries(r)){if(['status','type','stage','stage_label'].includes(k)&&!names(k).some(has))continue;
+  if(v!==null&&v!==undefined){upd[k]=v;continue;}if(names(k).some(n=>has(n)&&src[n]===null))upd[k]=null;}
+ await q(`INSERT INTO ${table} SET ? ON DUPLICATE KEY UPDATE ?`,[r,upd]);}
 async function upsertEnquiry(e){const ext=String(e.enquiry_id??e.ext_id??'').trim();if(!ext)throw new Error('enquiry_id missing');
  const pin=e.pincode?String(e.pincode).trim():null;const p=await lookupPin(pin);
  const r={ext_id:ext,customer:e.customer_name??e.customer??null,phone:e.phone??null,pincode:pin,area:e.area??p?.area??null,source:e.source??null,enquiry_date:toISODate(e.enquiry_date),status:e.status??'OPEN',assigned_to:e.assigned_to??null,lat:e.lat??p?.lat??null,lng:e.lng??p?.lng??null,updated_at:now()};
- await q('INSERT INTO enquiries SET ? ON DUPLICATE KEY UPDATE ?',[r,r]);}
+ await upsertRow('enquiries',r,e);}
 async function upsertProject(x){const ext=String(x.project_id??x.ext_id??'').trim();if(!ext)throw new Error('project_id missing');
  const pin=x.pincode?String(x.pincode).trim():null;const p=await lookupPin(pin);
  const r={ext_id:ext,customer:x.customer_name??x.customer??null,phone:x.phone??null,address:x.address??null,pincode:pin,area:x.area??p?.area??null,lat:x.lat??p?.lat??null,lng:x.lng??p?.lng??null,
   capacity_kw:x.capacity_kw!=null&&x.capacity_kw!==''?+x.capacity_kw:null,stage:normStage(x.stage),stage_label:x.stage!=null?String(x.stage):null,stage_date:toISODate(x.stage_date),survey_date:toISODate(x.survey_date),
   dispatch_date:toISODate(x.dispatch_date),installation_date:toISODate(x.installation_date),completion_date:toISODate(x.completion_date),engineer:x.engineer??null,team:x.team??null,created_date:toISODate(x.created_date),updated_at:now()};
- await q('INSERT INTO projects SET ? ON DUPLICATE KEY UPDATE ?',[r,r]);}
+ await upsertRow('projects',r,x);}
 const normType=t=>{t=String(t||'').toUpperCase();return /CLEAN/.test(t)?'CLEANING':/AMC/.test(t)?'AMC':'MAINTENANCE';};
 async function upsertService(x){const ext=String(x.ticket_id??x.ext_id??'').trim();if(!ext)throw new Error('ticket_id missing');
  const pin=x.pincode?String(x.pincode).trim():null;const p=await lookupPin(pin);
  const r={ext_id:ext,type:normType(x.type),customer:x.customer_name??x.customer??null,phone:x.phone??null,address:x.address??null,pincode:pin,area:x.area??p?.area??null,lat:x.lat??p?.lat??null,lng:x.lng??p?.lng??null,
   project_ref:x.project_id??null,issue:x.issue??null,status:String(x.status||'OPEN').toUpperCase(),scheduled_date:toISODate(x.scheduled_date),engineer:x.engineer??null,team:x.team??null,created_date:toISODate(x.created_date),updated_at:now()};
- await q('INSERT INTO service SET ? ON DUPLICATE KEY UPDATE ?',[r,r]);}
+ await upsertRow('service',r,x);}
 async function fillPin(pin,lat,lng){for(const t of ['enquiries','projects','service'])await q(`UPDATE ${t} SET lat=?,lng=? WHERE pincode=? AND lat IS NULL`,[lat,lng,pin]);}
 async function upsertPincode(p){await q('REPLACE INTO pincodes(pincode,lat,lng,area,source) VALUES(?,?,?,?,?)',[String(p.pincode),+p.lat,+p.lng,p.area??null,'manual']);await fillPin(String(p.pincode),+p.lat,+p.lng);}
 async function bulk(fn,items){const errors=[];let ok=0;for(let i=0;i<items.length;i++){try{await fn(items[i]);ok++;}catch(e){errors.push({index:i,error:e.message});}}return{received:items.length,saved:ok,errors};}
@@ -384,7 +390,7 @@ app.post('/public/enquiry',W(async(req,res)=>{const clean=v=>typeof v==='string'
  pushToERP(e);res.json({ok:true,ref:e.ref});}));
 // ERP can also PULL website enquiries
 app.get('/erp/v1/web-enquiries',erp,W(async(req,res)=>{const since=req.query.since||'1970-01-01';res.json(await q('SELECT ref,name customer_name,phone,email,pincode,segment,monthly_bill,message,created_at FROM web_enquiries WHERE created_at>? ORDER BY created_at LIMIT 500',[since]));}));
-app.post('/erp/v1/web-enquiries/ack',erp,W(async(req,res)=>{const refs=arr(req.body).map(x=>x.ref||x).filter(Boolean);if(refs.length)await q("UPDATE web_enquiries SET erp_status='SENT',erp_response='pulled by ERP' WHERE ref IN (?)",[refs]);res.json({ok:true,acknowledged:refs.length});}));
+app.post('/erp/v1/web-enquiries/ack',erp,W(async(req,res)=>{const refs=arr(req.body).map(x=>x.ref||x).filter(Boolean);let n=0;if(refs.length)n=(await q("UPDATE web_enquiries SET erp_status='SENT',erp_response='pulled by ERP' WHERE ref IN (?)",[refs])).affectedRows;res.json({ok:true,acknowledged:n,received:refs.length,unknown:refs.length-n});}));
 app.get('/api/web-enquiries',auth(['admin','manager','sales']),W(async(req,res)=>res.json(await q('SELECT * FROM web_enquiries ORDER BY created_at DESC LIMIT 300'))));
 app.post('/api/web-enquiries/retry',auth(['admin']),W(async(req,res)=>{const l=await q("SELECT * FROM web_enquiries WHERE erp_status<>'SENT' LIMIT 100");for(const e of l)await pushToERP(e);res.json({ok:true,retried:l.length});}));
 // ---- Public stats for landing page (aggregates only, no customer names/addresses) ----
