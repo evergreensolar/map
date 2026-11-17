@@ -79,12 +79,31 @@ async function geocodeBatch(max=20){const pins=await q(`SELECT DISTINCT pincode 
   await new Promise(r=>setTimeout(r,1200));}return done;}
 
 // ---- App ----
-const app=express();app.set('trust proxy',1);app.use(express.json({limit:'20mb'}));
-app.use(session({secret:process.env.SESSION_SECRET||require('crypto').createHash('sha256').update('fieldmap|'+(process.env.DB_PASSWORD||'')+'|'+(process.env.DB_NAME||'')).digest('hex'),resave:false,saveUninitialized:false,store:process.env.DB_NAME?new MySQLStore({...DBCFG,createDatabaseTable:true}):undefined,cookie:{httpOnly:true,maxAge:12*3600*1000}}));
+const app=express();app.set('trust proxy',1);app.disable('x-powered-by');
+// ---- Security: headers, AI/scraper bot blocking ----
+const AI_BOTS=/GPTBot|ChatGPT-User|OAI-SearchBot|ClaudeBot|Claude-Web|Claude-User|anthropic-ai|CCBot|Google-Extended|PerplexityBot|Perplexity-User|Bytespider|Amazonbot|Applebot-Extended|cohere-ai|Diffbot|ImagesiftBot|Omgilibot|FacebookBot|meta-externalagent|YouBot|Timpibot|PetalBot|DataForSeoBot|Scrapy|HTTrack|SiteSucker|WebCopier|WebZIP|Offline Explorer/i,
+ TOOLS=/python-requests|python-urllib|aiohttp|httpx|curl\/|wget|Go-http-client|node-fetch|undici|axios|okhttp|libwww|Java\/|HeadlessChrome|PhantomJS|Puppeteer|Playwright|Selenium/i;
+app.use((req,res,next)=>{
+ res.set({'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=(), payment=()',
+  'Cross-Origin-Opener-Policy':'same-origin','X-Robots-Tag':req.path==='/'||req.path==='/index.html'?'noai, noimageai':'noindex, nofollow, noarchive, noai, noimageai',
+  'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://unpkg.com https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://*.tile.openstreetmap.org https://unpkg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"});
+ if(req.secure)res.set('Strict-Transport-Security','max-age=31536000; includeSubDomains');
+ // Machine clients (scrapers, AI crawlers, copy tools) get nothing – except the cron job and the ERP API
+ const ua=req.get('user-agent')||'';
+ if(req.path!=='/robots.txt'&&(AI_BOTS.test(ua)||(TOOLS.test(ua)&&!/^\/(cron|erp)\//.test(req.path)&&req.path!=='/')))return res.status(403).type('text/plain').send('Forbidden');
+ next();});
+app.get('/robots.txt',(req,res)=>res.type('text/plain').send(`User-agent: GPTBot\nDisallow: /\n\nUser-agent: ChatGPT-User\nDisallow: /\n\nUser-agent: ClaudeBot\nDisallow: /\n\nUser-agent: anthropic-ai\nDisallow: /\n\nUser-agent: CCBot\nDisallow: /\n\nUser-agent: Google-Extended\nDisallow: /\n\nUser-agent: PerplexityBot\nDisallow: /\n\nUser-agent: Bytespider\nDisallow: /\n\nUser-agent: *\nAllow: /$\nDisallow: /app.html\nDisallow: /app.js\nDisallow: /api/\nDisallow: /docs/\nDisallow: /erp/\nDisallow: /cron/\n`));
+app.use(express.json({limit:'10mb'}));
+app.use(session({secret:process.env.SESSION_SECRET||require('crypto').createHash('sha256').update('fieldmap|'+(process.env.DB_PASSWORD||'')+'|'+(process.env.DB_NAME||'')).digest('hex'),resave:false,saveUninitialized:false,store:process.env.DB_NAME?new MySQLStore({...DBCFG,createDatabaseTable:true}):undefined,name:'sev.sid',cookie:{httpOnly:true,secure:'auto',sameSite:'lax',maxAge:12*3600*1000}}));
 const W=fn=>(req,res,next)=>Promise.resolve(fn(req,res,next)).catch(e=>{console.error(e);res.status(500).json({error:e.message});});
 const auth=roles=>(req,res,next)=>{const u=req.session.user;if(!u)return res.status(401).json({error:'login required'});if(roles&&!roles.includes(u.role))return res.status(403).json({error:'not allowed'});next();};
-app.post('/auth/login',W(async(req,res)=>{const u=await one('SELECT * FROM users WHERE username=? AND active=1',[req.body.username||'']);
- if(!u||!bcrypt.compareSync(req.body.password||'',u.password_hash))return res.status(401).json({error:'Wrong username or password'});
+// Brute-force protection: 8 wrong tries per username or 20 per IP -> locked for 15 minutes
+const FAILS={};const failKey=k=>{const f=FAILS[k];if(f&&Date.now()-f.t>15*60e3)delete FAILS[k];return FAILS[k];};
+app.post('/auth/login',W(async(req,res)=>{const un=String(req.body.username||'').slice(0,60).toLowerCase(),ku='u:'+un,ki='i:'+req.ip;
+ if((failKey(ku)?.n||0)>=8||(failKey(ki)?.n||0)>=20)return res.status(429).json({error:'Too many wrong attempts. Try again after 15 minutes.'});
+ const u=await one('SELECT * FROM users WHERE username=? AND active=1',[un]);
+ if(!u||!bcrypt.compareSync(String(req.body.password||''),u.password_hash)){for(const k of [ku,ki]){const f=FAILS[k]||(FAILS[k]={n:0,t:Date.now()});f.n++;}await new Promise(r=>setTimeout(r,600));return res.status(401).json({error:'Wrong username or password'});}
+ delete FAILS[ku];await new Promise((ok,no)=>req.session.regenerate(e=>e?no(e):ok())); // new session id after login
  req.session.user={id:u.id,name:u.name,username:u.username,role:u.role,team:u.team};res.json(req.session.user);}));
 app.post('/auth/logout',(req,res)=>req.session.destroy(()=>res.json({ok:true})));
 app.get('/auth/me',auth(),(req,res)=>res.json({...req.session.user,office:process.env.OFFICE_LATLNG||'22.6470,88.4400'}));
@@ -314,7 +333,7 @@ async function pushToERP(e){const url=process.env.ERP_ENQUIRY_WEBHOOK;if(!url)re
  try{const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-API-Key':process.env.ERP_WEBHOOK_KEY||''},body:JSON.stringify({ref:e.ref,customer_name:e.name,phone:e.phone,email:e.email,pincode:e.pincode,segment:e.segment,monthly_bill:e.monthly_bill,message:e.message,source:'Smart Evergreen website',created_at:e.created_at})});
   const t=(await r.text()).slice(0,300);await q('UPDATE web_enquiries SET erp_status=?,erp_response=? WHERE ref=?',[r.ok?'SENT':'FAILED',t,e.ref]);}
  catch(err){await q("UPDATE web_enquiries SET erp_status='FAILED',erp_response=? WHERE ref=?",[String(err.message).slice(0,300),e.ref]);}}
-app.post('/public/enquiry',W(async(req,res)=>{const b=req.body||{},ip=req.ip;
+app.post('/public/enquiry',W(async(req,res)=>{const clean=v=>typeof v==='string'?v.replace(/[<>`\u0000-\u001f]/g,' ').trim():v;const b=Object.fromEntries(Object.entries(req.body||{}).map(([k,v])=>[k,clean(v)])),ip=req.ip;
  if(b.website)return res.json({ok:true}); // honeypot – bots fill hidden field
  const k=ip+':'+istDay();hits[k]=(hits[k]||0)+1;if(hits[k]>5)return res.status(429).json({error:'Too many requests today. Please call 7074833525.'});
  const phone=String(b.phone||'').replace(/\D/g,'').slice(-10)||null,pin=String(b.pincode||'').replace(/\D/g,''),email=String(b.email||'').trim().toLowerCase();
@@ -350,7 +369,8 @@ app.get('/public/stats',W(async(req,res)=>{if(Date.now()-pubCache.t<5*60e3&&pubC
  pubCache={t:Date.now(),v:{systems_monitored:+sys.n||0,monitored_kw:Math.round(+sys.kw||0),live_kw:+(+sys.live||0).toFixed(1),today_kwh:Math.round(+today.k||0),lifetime_mwh:+(life/1000).toFixed(1),
   co2_tonnes:+(life*0.82/1000).toFixed(1),trees:Math.round(life*0.82/21),installed_projects:+proj.n||0,installed_kw:Math.round(+proj.kw||0),
   alerts_resolved_30d:+al.n||0,auto_resolved_30d:+(al.auto||0),avg_resolve_hours:al.mins?+(al.mins/60).toFixed(1):null,open_alerts:+openA.n||0,areas,updated:now()}};res.json(pubCache.v);}));
-app.use(express.static(path.join(__dirname,'public')));
+app.get('/app.js',auth(),(req,res)=>{res.set('Cache-Control','no-store');res.type('application/javascript').sendFile(path.join(__dirname,'private','app.js'));});
+app.use(express.static(path.join(__dirname,'public'),{dotfiles:'deny',index:'index.html'}));
 // ---- Start / CLI / First-run setup wizard ----
 const crypto=require('crypto');
 function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended:false}));
@@ -361,11 +381,14 @@ function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended
  ${msg?`<p class="e">${msg}</p>`:''}<b>MySQL database (from cPanel)</b>
  <label>Database host</label><input name="DB_HOST" value="localhost"><label>Database name</label><input name="DB_NAME" required>
  <label>Database user</label><input name="DB_USER" required><label>Database password</label><input name="DB_PASSWORD" type="password" required>
+ ${process.env.DB_PASSWORD?'<label>CURRENT saved database password (security check)</label><input name="CUR_PASS" type="password" required>':''}
  <br><br><b>Admin login</b> <small>(leave empty if you already created one – your data is kept)</small><label>Your name</label><input name="ADMIN_NAME" value="Suva"><label>Username</label><input name="ADMIN_USER">
  <label>Password (min 8 characters)</label><input name="ADMIN_PASS" type="password" minlength="8">
  <label>Office location (lat,lng)</label><input name="OFFICE_LATLNG" value="22.6470,88.4400"><button>Save &amp; start</button></form>`}</body></html>`;
  sa.get('*',(req,res)=>res.send(page((errMsg&&!/missing/i.test(errMsg)?'Database connection failed: '+errMsg:'')+`<br><small style="color:#555">Settings files looked for: ${CONFIG_FILES.map(f=>f+(CONFIG_FOUND.includes(f)?' ✅':' ✗')).join('<br>')}</small>`)));
- sa.post('/setup',async(req,res)=>{const b=req.body;const cfg={host:b.DB_HOST||'localhost',port:3306,user:b.DB_USER,password:b.DB_PASSWORD,database:b.DB_NAME};
+ sa.post('/setup',async(req,res)=>{const b=req.body;
+  // Settings already exist (DB just unreachable): only someone who knows the CURRENT database password may change them
+  if(process.env.DB_PASSWORD&&b.CUR_PASS!==process.env.DB_PASSWORD)return res.send(page('Settings already exist. Enter the CURRENT database password to change them (protects against takeover).'));const cfg={host:b.DB_HOST||'localhost',port:3306,user:b.DB_USER,password:b.DB_PASSWORD,database:b.DB_NAME};
   try{const c=await mysql.createConnection(cfg);for(const sql of SCHEMA)await c.query(sql);
    const admins=(await c.query("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1"))[0][0].n;
    let adminMsg='Existing admin login kept.';

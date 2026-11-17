@@ -77,3 +77,14 @@ Wait 10 seconds and open the site again, then login.
 - Growatt rate limit: calls are spaced 1.5 s apart (`GROWATT_GAP_MS`). If Growatt still says error_frequently_access, that round stops and old data is kept – no false "No data".
 - The Test button shows the reason ("decision") for each inverter.
 - An OFFLINE alert opens only after 45 minutes offline in daytime (`OFFLINE_ALERT_MINUTES`).
+
+## Security / anti-copy (what is in place)
+- Staff app code lives in `private/app.js` and is sent only to logged-in users (`/app.js`). The public `app.html` is just the login screen + a tiny loader. Keep the `private` folder in every zip / deploy.
+- AI crawlers (GPTBot, ClaudeBot, CCBot, Google-Extended, PerplexityBot, Bytespider …) and website-copier tools (HTTrack, curl, wget, python, headless browsers …) get 403. Exceptions: the home page `/`, `/cron/…` (Hostinger cron uses curl) and `/erp/…` (ERP team).
+- robots.txt blocks AI bots; pages send `noai, noimageai` and the staff pages `noindex`.
+- Security headers: CSP, X-Frame-Options DENY (no embedding), nosniff, HSTS on HTTPS, no X-Powered-By.
+- Login: 8 wrong passwords per username (or 20 per IP) → locked 15 min; new session id after login; cookie httpOnly + SameSite + Secure on HTTPS.
+- Setup page: when settings already exist, the CURRENT database password is required to change them (stops a takeover if the DB is briefly down).
+- Website enquiry form: HTML characters are stripped (stops script injection into the staff app).
+- Server code (server.js, rms.js), database and inverter keys are never sent to browsers.
+- Honest limit: anything a browser receives (HTML/CSS of the public page, the staff UI after login) can still be seen by a logged-in user or copied by a determined person. Protect logins: strong passwords, remove users who leave.
