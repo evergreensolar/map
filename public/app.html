@@ -1,0 +1,219 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evergreen Solar – Field Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{background:#1b7a3a;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center}
+header b{flex:1}header button{background:#fff;color:#1b7a3a;border:0;padding:6px 10px;border-radius:4px;cursor:pointer}
+header button.on{background:#ffd54f}
+main{flex:1;display:flex;min-height:0}#side{width:330px;overflow:auto;padding:10px;background:#f4f7f4;border-right:1px solid #ccc}
+#map{flex:1}.page{flex:1;overflow:auto;padding:16px;display:none}
+label{display:block;font-size:12px;margin-top:6px}select,input,button.b{width:100%;padding:6px;margin-top:2px}
+button.b{background:#1b7a3a;color:#fff;border:0;border-radius:4px;margin-top:8px;cursor:pointer}button.g{background:#555}
+h4{margin:12px 0 4px}.leg{font-size:13px;display:flex;align-items:center;gap:6px;margin:2px 0}.dot{width:12px;height:12px;border-radius:50%;border:1px solid #333}
+table{border-collapse:collapse;width:100%;font-size:13px}td,th{border:1px solid #ccc;padding:4px 6px}th{background:#e8f3eb}
+#login{position:fixed;inset:0;background:#1b7a3a;display:flex;align-items:center;justify-content:center;z-index:9999}
+#login div{background:#fff;padding:24px;border-radius:8px;width:300px}.small{font-size:12px;color:#555}#list{font-size:12px;background:#fff;padding:6px;max-height:220px;overflow:auto}
+</style></head><body>
+<div id="login"><div><h2 style="color:#1b7a3a;margin-top:0">Evergreen Solar<br><small>Field Map Login</small></h2>
+<label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password">
+<button class="b" onclick="login()">Login</button><p id="lerr" style="color:red"></p></div></div>
+<header><b><a href="/" style="color:#fff;text-decoration:none">Smart Evergreen</a> – Field Map</b>
+<button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
+<button data-p="importPage" onclick="show(this)" class="adm">Import</button><button data-p="usersPage" onclick="show(this)" class="adm">Users</button>
+<button data-p="docsPage" onclick="show(this)">API Docs</button><span id="me"></span><button onclick="logout()">Logout</button></header>
+<main>
+<div id="mapPage" style="display:flex;flex:1">
+<div id="side">
+<h4>Layers</h4>
+<label><input type="checkbox" id="lEnq" checked style="width:auto"> Enquiries by pincode</label>
+<label><input type="checkbox" id="lProj" checked style="width:auto"> Projects</label><label><input type="checkbox" id="lSvc" checked style="width:auto"> Service tickets (maintenance / cleaning / AMC)</label>
+<label>Project stages</label><select id="fStage" multiple size="10"></select>
+<label>Date field</label><select id="fDateField"><option value="stage_date">Current stage date</option><option value="survey_date">Survey date</option><option value="dispatch_date">Dispatch date</option><option value="installation_date">Installation date</option><option value="completion_date">Completion date</option><option value="created_date">Project created</option></select>
+<label>From</label><input type="date" id="fFrom"><label>To</label><input type="date" id="fTo">
+<label>Team</label><select id="fTeam"></select><label>Engineer</label><select id="fEng"></select><label>Enquiry source</label><select id="fSrc"></select>
+<button class="b" onclick="load()">Apply</button>
+<h4>Legend</h4><div id="legend"></div><div class="leg"><span class="dot" style="background:rgba(255,152,0,.5)"></span>Enquiries (circle size = count)</div>
+<div class="leg"><span style="width:12px;height:12px;background:#d50000;transform:rotate(45deg)"></span>Maintenance</div><div class="leg"><span style="width:12px;height:12px;background:#0091ea;transform:rotate(45deg)"></span>Cleaning</div><div class="leg"><span style="width:12px;height:12px;background:#00c853;transform:rotate(45deg)"></span>AMC</div><h4>Totals</h4><div id="totals" class="small"></div>
+<h4>Nearby completed projects</h4><div class="small">Turn on, then click any spot on the map (customer's house).</div>
+<label><input type="checkbox" id="nearMode" style="width:auto"> Nearby mode</label><label>Radius (km)</label><input id="nearKm" type="number" value="3">
+<h4>Route plan (shown projects)</h4><label>Max stops</label><input id="maxStops" type="number" value="8">
+<button class="b" onclick="route()">Plan route from office</button><button class="b g" onclick="clearRoute()">Clear</button>
+<div id="list"></div></div>
+<div id="map"></div></div>
+<div id="genPage" style="display:none;flex:1;min-height:0">
+<div style="width:330px;overflow:auto;padding:10px;background:#f4f7f4;border-right:1px solid #ccc">
+<h4 style="margin-top:4px">Generation overview</h4><div id="gTot" class="small"></div>
+<label>Brand</label><select id="gBrand" onchange="genDraw()"><option value="">All brands</option><option>GROWATT</option><option value="SOLARMAN">DEYE (Solarman)</option><option>SUNGROW</option><option>PVBLINK</option></select>
+<label>Show</label><select id="gFilter" onchange="genDraw()"><option value="">All systems</option><option value="ALERT">Only with alerts</option><option value="OK">Only healthy</option><option value="UNMAPPED">Not mapped to project</option></select>
+<label>Search</label><input id="gQ" oninput="genDraw()" placeholder="customer / plant / serial">
+<button class="b g" onclick="genPage()">Refresh</button>
+<h4>Legend</h4><div id="gLeg" class="small"></div>
+<h4>Systems with open alerts</h4><div id="gList" class="small"></div></div>
+<div id="gmap" style="flex:1"></div></div>
+<div id="planPage" class="page"><h3>Area planner – club visits of the same area into one day</h3>
+<p class="small">Read-only view. Assignment and rescheduling are done in the ERP. Call customers listed under one area and shift them to the suggested date.</p>
+<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end"><div><label>From</label><input type="date" id="pFrom"></div><div><label>Days</label><select id="pDays"><option>7</option><option>3</option><option>14</option><option>30</option></select></div>
+<div><label>Include</label><label><input type="checkbox" class="pk" value="SURVEY" checked style="width:auto"> Site survey</label><label><input type="checkbox" class="pk" value="MAINTENANCE" checked style="width:auto"> Maintenance</label><label><input type="checkbox" class="pk" value="CLEANING" checked style="width:auto"> Cleaning</label><label><input type="checkbox" class="pk" value="AMC" checked style="width:auto"> AMC</label></div>
+<div><button class="b" onclick="planner()">Show</button></div><div><button class="b g" onclick="window.print()">Print</button></div></div><div id="planBody"></div></div>
+<div id="rmsPage" class="page"><h3>Inverter remote monitoring</h3><div id="brandBox" class="small"></div><div id="connBox"></div><div id="unmapBox"></div>
+<h4>Link inverter to customer</h4><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+<div><label>Search customer / project / phone</label><input id="rQ" oninput="rSearch()" style="width:240px"><select id="rProj" style="width:240px"></select></div>
+<div><label>…or new customer (ERP not linked yet)</label><input id="rCust" placeholder="Customer name" style="width:160px"><input id="rPhone" placeholder="Phone" style="width:110px"><input id="rPin" placeholder="Pincode" style="width:80px"></div>
+<div><label>Brand</label><select id="rBrand"><option>GROWATT</option><option value="SOLARMAN">DEYE (Solarman)</option><option>SUNGROW</option><option>PVBLINK</option></select></div>
+<div><label>Inverter serial *</label><input id="rSn"></div><div><label>Data logger serial</label><input id="rLog"></div><div><label>System kW</label><input id="rKw" type="number" style="width:80px"></div>
+<div><button class="b" onclick="rAdd()">Link</button></div><div><button class="b g" onclick="rRefresh()">Refresh now</button></div></div>
+<div id="rTbl" style="margin-top:12px"></div></div>
+<div id="alertPage" class="page"><h3>Inverter alerts &amp; follow-up</h3>
+<p class="small">Alerts open automatically from RMS data and close automatically when the inverter is normal again. Orange cards = question due (asked again every 24 hours until resolved).</p>
+<select id="aStatus" style="width:200px" onchange="alertsPage()"><option value="OPEN">Open</option><option value="RESOLVED">Resolved</option></select> <button class="b g" style="width:auto;padding:6px 12px" onclick="api('/api/rms/evaluate',{method:'POST',body:'{}'}).then(alertsPage)">Run performance check now</button><div id="aList"></div></div>
+<div id="areaPage" class="page"><h3>Area / Pincode summary</h3><p class="small">Use this to club site surveys of the same area on the same day.</p><div id="areaTbl"></div></div>
+<div id="importPage" class="page"><h3>Excel import (until ERP API is live)</h3>
+<p class="small">Column names = field names in API Docs (e.g. project_id, customer_name, pincode, lat, lng, stage, stage_date ...). Spaces/case don't matter.</p>
+<label>Type</label><select id="impType" style="width:250px"><option>projects</option><option>enquiries</option><option>service</option><option>pincodes</option></select>
+<input type="file" id="impFile" accept=".xlsx,.xls,.csv" style="width:250px"><button class="b" style="width:250px" onclick="imp()">Upload</button><pre id="impRes"></pre></div>
+<div id="usersPage" class="page"><h3>Users</h3><div id="uTbl"></div><h4>Add user</h4>
+<div style="max-width:300px"><label>Name</label><input id="uN"><label>Username</label><input id="uU"><label>Password</label><input id="uP">
+<label>Role</label><select id="uR"><option>sales</option><option>engineer</option><option>manager</option><option>admin</option></select><label>Team</label><input id="uT">
+<button class="b" onclick="addUser()">Add</button></div></div>
+<div id="docsPage" class="page"><button class="b" style="width:250px" onclick="location='/docs/download'">Download API spec (for ERP team)</button><div id="docBody"></div></div>
+</main>
+<script>
+const COLORS={ENQUIRY:'#9e9e9e',SURVEY_REQUESTED:'#ffb74d',SURVEY_SCHEDULED:'#fb8c00',SURVEY_DONE:'#fdd835',DESIGN_PENDING:'#f06292',DESIGN_DONE:'#ba68c8',PROJECT_CREATED:'#7986cb',AGREEMENT_PENDING:'#5c6bc0',DISPATCH_PENDING:'#e53935',INSTALLATION_PENDING:'#8e24aa',NET_METERING_PENDING:'#00acc1',DOCUMENT_SENDING:'#26a69a',COMPLETED:'#2e9e44',OTHER:'#6d4c41'};
+const NAMES={ENQUIRY:'Enquiry',SURVEY_REQUESTED:'Survey requested (coordinator)',SURVEY_SCHEDULED:'Survey scheduled (engineer)',SURVEY_DONE:'Survey submitted',DESIGN_PENDING:'Design pending',DESIGN_DONE:'Design done / customer confirm',PROJECT_CREATED:'Project created',AGREEMENT_PENDING:'Agreement pending',DISPATCH_PENDING:'Dispatch pending',INSTALLATION_PENDING:'Installation pending',NET_METERING_PENDING:'Net metering pending',DOCUMENT_SENDING:'Document sending',COMPLETED:'Completed',OTHER:'Other'};
+const SVC={MAINTENANCE:'#d50000',CLEANING:'#0091ea',AMC:'#00c853'},KIND={SURVEY:'#fb8c00',...SVC};
+let ME,projects=[],routeLine,nearLayer=L.layerGroup();
+const $=id=>document.getElementById(id);
+const api=async(u,o={})=>{const r=await fetch(u,{headers:{'Content-Type':'application/json'},...o});if(r.status==401){$('login').style.display='flex';throw 0;}return r.json();};
+const map=L.map('map').setView([22.65,88.45],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(map);
+const projLayer=L.markerClusterGroup({disableClusteringAtZoom:15}),enqLayer=L.layerGroup();map.addLayer(projLayer);map.addLayer(enqLayer);map.addLayer(nearLayer);
+$('fStage').innerHTML=Object.keys(NAMES).map(k=>`<option value="${k}" ${['SURVEY_REQUESTED','SURVEY_SCHEDULED','DISPATCH_PENDING','INSTALLATION_PENDING','NET_METERING_PENDING'].includes(k)?'selected':''}>${NAMES[k]}</option>`).join('');
+$('legend').innerHTML=Object.keys(NAMES).map(k=>`<div class="leg"><span class="dot" style="background:${COLORS[k]}"></span>${NAMES[k]}</div>`).join('');
+async function login(){const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('lu').value,password:$('lp').value})});
+ if(!r.ok){$('lerr').textContent='Wrong username or password';return;}init();}
+async function logout(){await fetch('/auth/logout',{method:'POST'});location.reload();}
+async function init(){try{ME=await api('/auth/me');}catch(e){return;}$('login').style.display='none';badge();$('me').textContent=`${ME.name} (${ME.role})`;
+ document.querySelectorAll('.adm').forEach(b=>b.style.display=['admin','manager'].includes(ME.role)?'':'none');if(ME.role!=='admin')document.querySelector('[data-p=usersPage]').style.display='none';
+ const s=await api('/api/summary');const opt=(a)=>'<option value="">All</option>'+a.map(x=>`<option>${x}</option>`).join('');
+ $('fTeam').innerHTML=opt(s.filters.teams);$('fEng').innerHTML=opt(s.filters.engineers);$('fSrc').innerHTML=opt(s.filters.sources);
+ if(ME.role==='engineer'&&ME.team)$('fTeam').value=ME.team;load();}
+function show(b){document.querySelectorAll('header button[data-p]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
+ ['mapPage','genPage','planPage','areaPage','rmsPage','alertPage','importPage','usersPage','docsPage'].forEach(p=>$(p).style.display='none');$(b.dataset.p).style.display=['mapPage','genPage'].includes(b.dataset.p)?'flex':'block';
+ if(b.dataset.p=='mapPage')map.invalidateSize();if(b.dataset.p=='areaPage')areas();if(b.dataset.p=='planPage')planner();if(b.dataset.p=='rmsPage')rmsPage();if(b.dataset.p=='genPage')genPage();if(b.dataset.p=='alertPage')alertsPage();if(b.dataset.p=='usersPage')users();if(b.dataset.p=='docsPage')docs();}
+const fmt=d=>d?d.split('-').reverse().join('/'):'-';
+async function load(){const st=[...$('fStage').selectedOptions].map(o=>o.value).join(',');const q=new URLSearchParams({stage:st,from:$('fFrom').value,to:$('fTo').value,team:$('fTeam').value,engineer:$('fEng').value,datefield:$('fDateField').value});
+ projLayer.clearLayers();enqLayer.clearLayers();projects=[];const cnt={};
+ if($('lProj').checked&&st){projects=await api('/api/projects?'+q);projects.forEach(p=>{cnt[p.stage]=(cnt[p.stage]||0)+1;
+  L.circleMarker([p.lat,p.lng],{radius:8,weight:1,color:'#222',fillColor:COLORS[p.stage],fillOpacity:.9}).bindPopup(`<b>${p.customer||''}</b> (${p.ext_id})<br><b style="color:${COLORS[p.stage]}">${NAMES[p.stage]}</b> ${p.stage_label?'– '+p.stage_label:''}<br>Stage date: ${fmt(p.stage_date)}<br>Survey: ${fmt(p.survey_date)} | Dispatch: ${fmt(p.dispatch_date)}<br>Install: ${fmt(p.installation_date)} | Complete: ${fmt(p.completion_date)}<br>${p.capacity_kw?p.capacity_kw+' kW | ':''}${p.engineer||''} ${p.team?'('+p.team+')':''}<br>${p.address||''} ${p.pincode||''}<br>${p.phone||''}<br><a target=_blank href="https://www.openstreetmap.org/directions?to=${p.lat},${p.lng}">Directions</a>`).addTo(projLayer);});}
+ let enqTotal=0;if($('lEnq').checked){const e=await api('/api/enquiries/by-pincode?'+new URLSearchParams({from:$('fFrom').value,to:$('fTo').value,source:$('fSrc').value}));
+  e.forEach(x=>{enqTotal+=x.count;L.circleMarker([x.lat,x.lng],{radius:Math.min(6+Math.sqrt(x.count)*4,40),color:'#e65100',weight:1,fillColor:'#ff9800',fillOpacity:.35}).bindPopup(`<b>Pincode ${x.pincode}</b><br>${x.area||''}<br>Enquiries: <b>${x.count}</b>`).addTo(enqLayer);});}
+ $('totals').innerHTML=`Enquiries shown: <b>${enqTotal}</b><br>Projects shown: <b>${projects.length}</b><br>`+Object.entries(cnt).map(([k,v])=>`<span style="color:${COLORS[k]}">●</span> ${NAMES[k]}: ${v}`).join('<br>');
+ if($('lSvc').checked){const sv=await api('/api/service');sv.forEach(t=>L.marker([t.lat,t.lng],{icon:L.divIcon({className:'',html:`<div style="width:14px;height:14px;background:${SVC[t.type]};border:2px solid #fff;transform:rotate(45deg);box-shadow:0 0 2px #000"></div>`})}).bindPopup(`<b>${t.type}</b> ticket ${t.ext_id}<br><b>${t.customer||''}</b> ${t.phone||''}<br>${t.issue||''}<br>Status: ${t.status} | Date: ${fmt(t.scheduled_date)}<br>${t.engineer||''}`).addTo(enqLayer));
+ $('totals').innerHTML+=`<br>Open service tickets: <b>${sv.length}</b>`;}
+ const all=[...projects.map(p=>[p.lat,p.lng])];if(all.length)map.fitBounds(L.latLngBounds(all).pad(.1));}
+map.on('click',async e=>{if(!$('nearMode').checked)return;nearLayer.clearLayers();const km=+$('nearKm').value||3;
+ L.circle(e.latlng,{radius:km*1000,color:'#2e9e44',fillOpacity:.05}).addTo(nearLayer);L.marker(e.latlng).addTo(nearLayer);
+ const r=await api(`/api/nearby?lat=${e.latlng.lat}&lng=${e.latlng.lng}&km=${km}`);
+ r.forEach(p=>L.circleMarker([p.lat,p.lng],{radius:9,color:'#000',weight:2,fillColor:'#2e9e44',fillOpacity:1}).bindPopup(`<b>${p.customer}</b><br>${p.capacity_kw||''} kW, completed ${fmt(p.completion_date)}<br>${p.distance_km} km away`).addTo(nearLayer));
+ $('list').innerHTML=`<b>${r.length} completed projects within ${km} km</b><br>`+r.map(p=>`${p.customer} – ${p.capacity_kw||'?'} kW – ${p.distance_km} km`).join('<br>');});
+function km(a,b){const t=Math.PI/180,x=Math.sin((b[0]-a[0])*t/2)**2+Math.cos(a[0]*t)*Math.cos(b[0]*t)*Math.sin((b[1]-a[1])*t/2)**2;return 12742*Math.asin(Math.sqrt(x));}
+function route(){clearRoute();let pts=projects.map(p=>({p,c:[p.lat,p.lng]})),cur=ME.office.split(',').map(Number),start=cur,out=[],tot=0,max=+$('maxStops').value||8;
+ while(pts.length&&out.length<max){let bi=0,bd=1e9;pts.forEach((x,i)=>{const d=km(cur,x.c);if(d<bd){bd=d;bi=i;}});tot+=bd;out.push({...pts[bi],d:bd});cur=pts[bi].c;pts.splice(bi,1);}
+ if(!out.length)return alert('No projects shown');routeLine=L.polyline([start,...out.map(o=>o.c)],{color:'#ff5722',weight:4,dashArray:'6'}).addTo(map);map.fitBounds(routeLine.getBounds().pad(.1));
+ $('list').innerHTML=`<b>Approx. ${tot.toFixed(1)} km (straight line)</b><ol>`+out.map(o=>`<li>${o.p.customer} – ${NAMES[o.p.stage]} – ${o.d.toFixed(1)} km</li>`).join('')+'</ol>';}
+function clearRoute(){if(routeLine)map.removeLayer(routeLine);routeLine=null;$('list').innerHTML='';}
+async function areas(){const s=await api('/api/summary');$('areaTbl').innerHTML=`<p>Total enquiries: <b>${s.totalEnquiries}</b> | Pincodes waiting for location: ${s.ungeocoded}</p><table><tr><th>Pincode</th><th>Area</th><th>Enquiries</th><th>Survey pending</th><th>Design</th><th>Agreement</th><th>Dispatch pending</th><th>Install pending</th><th>Net metering</th><th>Completed</th><th>Open service</th><th>Total projects</th></tr>`+
+ s.byArea.map(r=>`<tr><td>${r.pincode}</td><td>${r.area||''}</td><td>${r.enquiries}</td><td>${r.survey_pending}</td><td>${r.design_pending}</td><td>${r.agreement_pending}</td><td>${r.dispatch_pending}</td><td>${r.install_pending}</td><td>${r.netmeter_pending}</td><td>${r.completed}</td><td>${r.service_open}</td><td>${r.total}</td></tr>`).join('')+'</table>';}
+async function planner(){if(!$('pFrom').value)$('pFrom').value=new Date().toISOString().slice(0,10);
+ const kinds=[...document.querySelectorAll('.pk:checked')].map(x=>x.value).join(',');
+ const r=await api('/api/planner?'+new URLSearchParams({from:$('pFrom').value,days:$('pDays').value,kinds}));
+ $('planBody').innerHTML=`<p><b>${fmt(r.from)} to ${fmt(r.to)}</b> – ${r.total} visits in ${r.groups.length} areas</p>`+r.groups.map(g=>`<div style="border:1px solid #ccc;border-radius:6px;margin:10px 0;padding:8px;${g.can_club?'border-left:6px solid #fb8c00':''}">
+ <b>Pincode ${g.pincode}</b> ${g.area?'– '+g.area:''} – <b>${g.count} visits</b> on ${g.dates.length} different day(s)
+ ${g.can_club?`<span style="background:#fff3e0;padding:2px 6px;border-radius:4px;margin-left:6px">Can club into one day – suggested: <b>${fmt(g.suggested_date)}</b></span>`:''}
+ <table style="margin-top:6px"><tr><th>Date</th><th>Type</th><th>Customer</th><th>Phone</th><th>Address</th><th>Engineer</th><th>Status</th><th>ID</th></tr>
+ ${g.jobs.map(j=>`<tr><td>${fmt(j.date)}</td><td><span style="color:${KIND[j.kind]}">■</span> ${j.kind}</td><td>${j.customer||''}</td><td><a href="tel:${j.phone||''}">${j.phone||''}</a></td><td>${j.address||''}</td><td>${j.engineer||'-'}</td><td>${NAMES[j.status]||j.status||''}</td><td>${j.ext_id}</td></tr>`).join('')}</table></div>`).join('');}
+const LABEL={GROWATT:'Growatt',SOLARMAN:'Deye (Solarman)',SUNGROW:'Sungrow (iSolarCloud)',PVBLINK:'PVblink'};
+async function connPage(){if(ME.role!=='admin'){$('connBox').innerHTML='';return;}const st=await api('/api/rms/settings');
+ $('connBox').innerHTML='<h4>Inverter company connections (admin)</h4><div style="display:flex;gap:10px;flex-wrap:wrap">'+st.map(b=>`<div style="border:1px solid #ccc;border-radius:6px;padding:8px;width:260px">
+ <b>${LABEL[b.brand]}</b> <span style="color:${b.configured?'green':'red'}">${b.configured?'● connected':'● not set'}</span>
+ ${b.fields.map(f=>`<label>${f.key.replace(b.brand+'_','').replace(/_/g,' ')}${/BASE/.test(f.key)?' (optional)':''}</label><input data-k="${f.key}" type="${f.secret?'password':'text'}" placeholder="${f.secret&&f.set?'•••••• saved':''}" value="${f.value}">`).join('')}
+ <button class="b" onclick="connSave('${b.brand}',this)">Save</button><button class="b g" onclick="connTest('${b.brand}')">Test connection</button></div>`).join('')+'</div><p class="small">Secrets are stored on the server only and never shown again. Leave a secret box empty to keep the saved value.</p>';}
+async function connSave(brand,btn){const o={};btn.parentElement.querySelectorAll('input[data-k]').forEach(i=>{if(i.value)o[i.dataset.k]=i.value;});await api('/api/rms/settings',{method:'POST',body:JSON.stringify(o)});connPage();rmsPage(true);}
+async function connTest(brand){const r=await api('/api/rms/test/'+brand,{method:'POST'});alert(LABEL[brand]+': '+r.message);}
+async function rmsPage(skipConn){if(!skipConn)connPage();unmapped();const b=await api('/api/rms/brands');$('brandBox').innerHTML='API status: '+b.map(x=>`${x.brand==='SOLARMAN'?'DEYE/Solarman':x.brand}: <b style="color:${x.configured?'green':'red'}">${x.configured?'connected':'key not set'}</b>`).join(' | ');
+ const d=await api('/api/rms/devices');const low=+(window.LOWGEN||2.5);
+ $('rTbl').innerHTML='<table><tr><th>Customer</th><th>Project</th><th>Pincode</th><th>Brand</th><th>Inverter SN</th><th>Logger SN</th><th>kW</th><th>Now (kW)</th><th>Today (kWh)</th><th>Today per kW</th><th>Status</th><th>Last update</th><th></th></tr>'+
+ d.map(x=>{const pk=x.kw&&x.today_kwh!=null?(x.today_kwh/x.kw).toFixed(2):'-';const bad=x.last_error||x.online===0||(pk!=='-'&&+pk<low&&new Date().getHours()>=17);
+ return `<tr style="${bad?'background:#ffebee':''}"><td>${x.customer||''}<br><small>${x.phone||''}</small></td><td>${x.project_ext_id}${String(x.project_ext_id).startsWith('TMP-')?' <span style="color:#ef6c00">(temporary)</span>':''}</td><td>${x.pincode||''}</td><td>${x.brand==='SOLARMAN'?'DEYE':x.brand}</td><td>${x.serial}</td><td>${x.logger_serial||''}</td><td>${x.kw||''}</td><td>${x.last_power_kw??'-'}</td><td>${x.today_kwh??'-'}</td><td>${pk}</td>
+ <td>${x.last_error?'<span style="color:red">'+x.last_error+'</span>':x.online===0?'<b style="color:red">OFFLINE</b>':x.online===1?'Online':'-'}</td><td>${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</td><td><a href="#" onclick="rTest(${x.id});return false">Test</a> | <a href="#" onclick="rEdit(${x.id},'${x.project_ext_id}');return false">Edit</a> | <a href="#" onclick="rDel(${x.id});return false">Remove</a></td></tr>`;}).join('')+'</table><p class="small">Red rows = offline, API error, or low generation (check for maintenance / cleaning).</p>';}
+async function rSearch(){const r=await api('/api/projects/search?q='+encodeURIComponent($('rQ').value));$('rProj').innerHTML=r.map(p=>`<option value="${p.ext_id}" data-kw="${p.capacity_kw||''}">${p.customer} – ${p.ext_id} – ${p.pincode||''}</option>`).join('');const o=$('rProj').selectedOptions[0];if(o&&o.dataset.kw)$('rKw').value=o.dataset.kw;}
+async function rAdd(){const r=await api('/api/rms/devices',{method:'POST',body:JSON.stringify({project_ext_id:$('rCust').value?'':$('rProj').value,customer:$('rCust').value,phone:$('rPhone').value,pincode:$('rPin').value,brand:$('rBrand').value,serial:$('rSn').value,logger_serial:$('rLog').value,capacity_kw:$('rKw').value})});if(r.error)return alert(r.error);$('rSn').value=$('rLog').value=$('rCust').value=$('rPhone').value=$('rPin').value='';rmsPage(true);}
+async function rEdit(id,cur){const p=prompt('Link to ERP Project ID (current: '+cur+')',cur.startsWith('TMP-')?'':cur);if(p===null)return;
+ const lg=prompt('Data logger serial (leave empty to keep)','');const body={project_ext_id:p||undefined};if(lg)body.logger_serial=lg;
+ const r=await api('/api/rms/devices/'+id,{method:'PUT',body:JSON.stringify(body)});if(r.error)alert(r.error);rmsPage(true);}
+async function rTest(id){const r=await api('/api/rms/debug/'+id);
+ alert(r.ok?`OK (${r.used})\nNow: ${r.power_kw??'-'} kW\nToday: ${r.today_kwh??'-'} kWh\nTotal: ${r.total_kwh??'-'} kWh\n\nRaw reply:\n${r.raw}`:`FAILED (${r.used||''})\n${r.message}`);}
+async function rDel(id){if(confirm('Remove this inverter link?')){await api('/api/rms/devices/'+id,{method:'DELETE'});rmsPage();}}
+async function rRefresh(){await api('/api/rms/refresh',{method:'POST'});alert('Refresh started – reload this tab in a minute.');}
+const ATYPE={FAULT:'#c62828',GRID:'#455a64',OFFLINE:'#6d4c41',LOW_GEN:'#ef6c00',CLEANING:'#0091ea'};
+const ANAME={FAULT:'Inverter fault – engineer needed',GRID:'Grid fault – no engineer needed',OFFLINE:'No data / offline',LOW_GEN:'Low generation',CLEANING:'Cleaning needed'};
+async function badge(){try{const c=await api('/api/alerts/count');const b=$('aBadge');if(c.open){b.style.display='';b.textContent=c.due?`${c.open} (${c.due} due)`:c.open;}else b.style.display='none';}catch(e){}}
+setInterval(badge,60000);
+async function alertsPage(){const r=await api('/api/alerts?status='+$('aStatus').value);badge();
+ $('aList').innerHTML=r.length?r.map(a=>`<div style="border:1px solid #ccc;border-left:6px solid ${a.due?'#fb8c00':ATYPE[a.type]};border-radius:6px;margin:10px 0;padding:10px;${a.due?'background:#fff8e1':''}">
+ <b style="color:${ATYPE[a.type]}">${ANAME[a.type]||a.type}</b> – <b>${a.customer||a.project_ext_id}</b> ${a.phone?`<a href="tel:${a.phone}">${a.phone}</a>`:''} | ${a.area||''} ${a.pincode||''} | ${a.brand||''} SN ${a.serial}<br>
+ ${a.message}<br><span class="small">Open since ${new Date(a.opened_at).toLocaleString('en-IN')} (${a.age_hrs} h) | Follow-up round ${a.round}${a.engineer?' | Engineer: '+a.engineer:''}${a.status==='RESOLVED'?' | Resolved by '+a.resolved_by+' at '+new Date(a.resolved_at).toLocaleString('en-IN'):''}</span>
+ ${a.status==='OPEN'?`<div style="margin-top:8px;padding:8px;background:#fff;border:1px dashed #999;border-radius:4px"><b>${a.due?'❓ ':''}${a.question.q}</b>
+ <select id="ans${a.id}">${a.question.options.map(o=>`<option>${o}</option>`).join('')}</select>
+ <input id="eng${a.id}" placeholder="Engineer name (if assigned)" value="${a.engineer||''}"><input id="note${a.id}" placeholder="Remarks">
+ <button class="b" style="width:auto;padding:6px 14px" onclick="answer(${a.id})">Submit answer</button>
+ <button class="b g" style="width:auto;padding:6px 14px" onclick="resolveA(${a.id})">Mark resolved</button>
+ ${!a.due&&a.next_ask_at?`<span class="small"> Next question: ${new Date(a.next_ask_at).toLocaleString('en-IN')}</span>`:''}</div>`:''}
+ <a href="#" class="small" onclick="logA(${a.id},this);return false">History</a><div id="log${a.id}"></div></div>`).join(''):'<p>No alerts 🎉</p>';}
+async function answer(id){const r=await api(`/api/alerts/${id}/answer`,{method:'POST',body:JSON.stringify({answer:$('ans'+id).value,engineer:$('eng'+id).value,note:$('note'+id).value})});if(r.error)alert(r.error);alertsPage();}
+async function resolveA(id){const n=prompt('What was done to resolve?');if(n===null)return;await api(`/api/alerts/${id}/resolve`,{method:'POST',body:JSON.stringify({note:n})});alertsPage();}
+async function logA(id){const l=await api(`/api/alerts/${id}/log`);$('log'+id).innerHTML='<table>'+l.map(x=>`<tr><td>${new Date(x.at).toLocaleString('en-IN')}</td><td>${x.who}</td><td>${x.question?'<i>'+x.question+'</i><br>':''}${x.answer?'<b>'+x.answer+'</b> ':''}${x.note||''}</td></tr>`).join('')+'</table>';}
+// ---------- Generation page ----------
+let GMAP,gLayer,GDATA=[];
+const GLEG=[['#2e7d32','Good (≥3.5 kWh/kW today)'],['#9ccc65','Average'],['#fdd835','Low today'],['#ef6c00','Low generation alert'],['#0091ea','Cleaning needed'],['#607d8b','Grid fault (power cut)'],['#c62828','Fault / offline'],['#bdbdbd','No data yet']];
+function gColor(x){const a=x.alerts||'';if(/FAULT|OFFLINE/.test(a))return GLEG[6];if(/GRID/.test(a))return GLEG[5];if(/LOW_GEN/.test(a))return GLEG[3];if(/CLEANING/.test(a))return GLEG[4];
+ if(x.today_kwh==null)return GLEG[7];const y=x.kw?x.today_kwh/x.kw:null;if(y==null)return GLEG[1];return y>=3.5?GLEG[0]:y>=2?GLEG[1]:GLEG[2];}
+async function genPage(){if(!GMAP){GMAP=L.map('gmap').setView([22.65,88.45],9);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(GMAP);
+  gLayer=L.markerClusterGroup({disableClusteringAtZoom:14});GMAP.addLayer(gLayer);$('gLeg').innerHTML=GLEG.map(([c,t])=>`<div class="leg"><span class="dot" style="background:${c}"></span>${t}</div>`).join('');}
+ setTimeout(()=>GMAP.invalidateSize(),60);GDATA=await api('/api/gen/map');genDraw(true);}
+function genDraw(fit){const b=$('gBrand').value,f=$('gFilter').value,qq=$('gQ').value.toLowerCase();
+ const l=GDATA.filter(x=>(!b||x.brand===b)&&(!f||(f==='ALERT'?!!x.alerts:f==='OK'?!x.alerts:!x.project_ext_id))&&(!qq||`${x.name||''} ${x.serial} ${x.city||''}`.toLowerCase().includes(qq)));
+ gLayer.clearLayers();let kw=0,today=0,live=0,al=0,nl=0;const pts=[];
+ l.forEach(x=>{kw+=+x.kw||0;today+=+x.today_kwh||0;live+=+x.last_power_kw||0;if(x.alerts)al++;const [c,t]=gColor(x);
+  if(x.lat==null){nl++;return;}pts.push([x.lat,x.lng]);
+  L.circleMarker([x.lat,x.lng],{radius:x.alerts?10:7,color:'#222',weight:1,fillColor:c,fillOpacity:.9}).bindPopup(`<b>${x.name||x.serial}</b>${x.project_ext_id?'':' <i style="color:#ef6c00">(not mapped)</i>'}<br>${x.brand==='SOLARMAN'?'DEYE':x.brand} · SN ${x.serial}<br>${x.kw?x.kw+' kW · ':''}Now ${x.last_power_kw??'-'} kW<br>Today ${x.today_kwh??'-'} kWh ${x.kw&&x.today_kwh!=null?'('+(x.today_kwh/x.kw).toFixed(2)+' kWh/kW)':''}<br>Lifetime ${x.total_kwh!=null?Math.round(x.total_kwh)+' kWh':'-'}<br>Status: <b style="color:${c}">${t}</b>${x.alerts?'<br>Open alerts: <b>'+x.alerts+'</b>':''}${x.phone?'<br>'+x.phone:''}<br><small>${x.city||''} · updated ${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</small>`).addTo(gLayer);});
+ $('gTot').innerHTML=`Systems: <b>${l.length}</b> · ${kw.toFixed(0)} kW<br>Live power: <b>${live.toFixed(1)} kW</b><br>Today: <b>${today.toFixed(0)} kWh</b>${kw?` (${(today/kw).toFixed(2)} kWh/kW)`:''}<br>With open alerts: <b style="color:#c62828">${al}</b>${nl?`<br><span style="color:#ef6c00">${nl} systems have no location yet</span>`:''}`;
+ $('gList').innerHTML=l.filter(x=>x.alerts).slice(0,80).map(x=>`<div style="padding:4px 0;border-bottom:1px solid #ddd"><span style="color:${gColor(x)[0]}">●</span> ${x.name||x.serial} – ${x.alerts}</div>`).join('')||'No open alerts 🎉';
+ if(fit&&pts.length)GMAP.fitBounds(L.latLngBounds(pts).pad(.1));}
+// ---------- Auto-imported inverters to map ----------
+async function unmapped(){const d=(await api('/api/rms/devices')).filter(x=>!x.project_ext_id);const canEdit=['admin','manager'].includes(ME.role);
+ $('unmapBox').innerHTML=`<h4>Auto-imported inverters ${d.length?`– map to ERP project (${d.length} not mapped)`:''}</h4>
+ ${canEdit?'<button class="b" style="width:auto;padding:6px 14px" onclick="discover(\'GROWATT\',this)">Import all Growatt plants now</button> <span class="small">Also runs automatically once a day.</span>':''}
+ <datalist id="projList"></datalist>${d.length?`<table style="margin-top:8px"><tr><th>Brand</th><th>Plant name</th><th>City</th><th>Serial</th><th>Logger</th><th>kW</th><th>Today kWh</th><th>Map to project</th></tr>`+
+ d.map(x=>`<tr><td>${x.brand==='SOLARMAN'?'DEYE':x.brand}</td><td>${x.plant_name||''}</td><td>${x.city||''}</td><td>${x.serial}</td><td>${x.logger_serial||''}</td><td>${x.kw||''}</td><td>${x.today_kwh??'-'}</td>
+ <td>${canEdit?`<input id="mp${x.id}" list="projList" oninput="projSuggest(this.value)" placeholder="Project ID / customer" style="width:170px"> <button onclick="mapDev(${x.id})">Map</button>`:''}</td></tr>`).join('')+'</table>':''}`;}
+async function projSuggest(v){if(v.length<2)return;const r=await api('/api/projects/search?q='+encodeURIComponent(v));$('projList').innerHTML=r.map(p=>`<option value="${p.ext_id}">${p.customer} – ${p.pincode||''}</option>`).join('');}
+async function mapDev(id){const v=$('mp'+id).value.trim();if(!v)return;const r=await api('/api/rms/devices/'+id,{method:'PUT',body:JSON.stringify({project_ext_id:v})});if(r.error)return alert(r.error);rmsPage(true);}
+async function discover(brand,btn){btn.disabled=true;btn.textContent='Importing… (may take a minute)';
+ try{const r=await api('/api/rms/discover/'+brand,{method:'POST'});if(r.error)alert(r.error);else alert(`${brand}: ${r.found} plants found, ${r.added} new added${r.complete?'':'. More are still importing – they will finish automatically through the 15-minute job.'}${r.found?'':' – Click "Test connection" on the Growatt card to see Growatt\'s raw reply.'}`);}
+ finally{rmsPage(true);}}
+async function imp(){const f=$('impFile').files[0];if(!f)return;const fd=new FormData();fd.append('file',f);const r=await fetch('/api/import/'+$('impType').value,{method:'POST',body:fd});$('impRes').textContent=JSON.stringify(await r.json(),null,2);}
+async function users(){const u=await api('/api/users');$('uTbl').innerHTML='<table><tr><th>Name</th><th>Username</th><th>Role</th><th>Team</th><th>Active</th><th></th></tr>'+u.map(x=>`<tr><td>${x.name||''}</td><td>${x.username}</td><td>${x.role}</td><td>${x.team||''}</td><td>${x.active?'Yes':'No'}</td><td>${x.active?`<a href="#" onclick="delUser(${x.id})">Disable</a>`:''}</td></tr>`).join('')+'</table>';}
+async function addUser(){const r=await api('/api/users',{method:'POST',body:JSON.stringify({name:$('uN').value,username:$('uU').value,password:$('uP').value,role:$('uR').value,team:$('uT').value})});if(r.error)alert(r.error);users();}
+async function delUser(id){if(confirm('Disable this user?')){await api('/api/users/'+id,{method:'DELETE'});users();}}
+async function docs(){const t=await (await fetch('/docs/raw')).text();let k='';
+ if(ME.role==='admin'){try{const x=await api('/api/admin/keys');k=`<div style="background:#fff8e1;border:1px solid #ffb300;border-radius:6px;padding:10px;margin:10px 0"><b>Admin only – keep private</b><br>Cron command (Hostinger cron, every 15 min):<br><code style="word-break:break-all">${x.cron_command}</code><br><br>ERP API key: <code style="word-break:break-all">${x.erp_api_key}</code><br>ERP base URL: <code>${x.erp_base_url}</code></div>`;}catch(e){}}
+ $('docBody').innerHTML=k+marked.parse(t);}
+init();
+</script></body></html>

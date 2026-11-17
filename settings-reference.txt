@@ -1,0 +1,46 @@
+# ---- Server ----
+PORT=3000
+SESSION_SECRET=put-a-long-random-text-here
+ERP_API_KEY=put-another-long-random-text-here
+CRON_KEY=put-a-third-random-text-here
+OFFICE_LATLNG=22.6470,88.4400
+
+# ---- MySQL (from cPanel > MySQL Databases) ----
+DB_HOST=localhost
+DB_PORT=3306
+DB_NAME=cpaneluser_fieldmap
+DB_USER=cpaneluser_fieldmap
+DB_PASSWORD=
+DB_POOL=5
+
+# ---- Background jobs ----
+CRON_MAX_SECONDS=240
+INTERNAL_SCHEDULER=0
+
+# ---- Alerts / smart cleaning ----
+ALERT_FOLLOWUP_HOURS=24
+GRID_FAULT_WAIT_HOURS=12
+EXPECTED_PR=0.75
+CLEANING_RATIO=0.85
+LOWGEN_RATIO=0.6
+CLEANING_DAYS=2
+PEER_RADIUS_KM=10
+
+# ---- Inverter API keys (optional here – better to enter them in the app: RMS tab > connections) ----
+GROWATT_TOKEN=
+SOLARMAN_APP_ID=
+SOLARMAN_APP_SECRET=
+SOLARMAN_EMAIL=
+SOLARMAN_PASSWORD=
+SUNGROW_APPKEY=
+SUNGROW_ACCESS_KEY=
+SUNGROW_USER=
+SUNGROW_PASSWORD=
+PVBLINK_CLIENT_ID=
+PVBLINK_CLIENT_SECRET=
+PVBLINK_EMAIL=
+PVBLINK_PASSWORD=
+
+# ---- Website enquiry -> ERP push (optional; ERP can also pull from /erp/v1/web-enquiries) ----
+ERP_ENQUIRY_WEBHOOK=
+ERP_WEBHOOK_KEY=
