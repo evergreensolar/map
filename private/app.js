@@ -68,10 +68,18 @@ let RDATA=[],RF='';
 const f2=(v,d=1)=>v==null||v===''||isNaN(+v)?'–':(+v).toFixed(d).replace(/\.0+$/,'');
 function ago(t){if(!t)return'never';const m=Math.round((Date.now()-new Date(t))/60000);return m<1?'just now':m<60?m+' min ago':m<1440?Math.round(m/60)+' h ago':Math.round(m/1440)+' d ago';}
 function rState(x){if(x.last_error&&!/^ALARM/.test(x.last_error))return['err','No data'];if(x.last_error)return['bad','Alarm'];if(x.online===1)return['ok','Online'];if(x.online===0)return['bad','Offline'];return['wait','Idle (night)'];}
+function ring(pct,col){const r=26,c=2*Math.PI*r,v=Math.max(0,Math.min(1,pct||0));
+ return `<svg width="64" height="64" viewBox="0 0 64 64"><circle cx="32" cy="32" r="${r}" fill="none" stroke="rgba(127,154,163,.18)" stroke-width="6"/><circle cx="32" cy="32" r="${r}" fill="none" stroke="${col}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${(c*v).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 32 32)" style="transition:stroke-dasharray .8s"/><text x="32" y="36" text-anchor="middle" font-family="JetBrains Mono,monospace" font-size="12" font-weight="600" fill="${col}">${Math.round(v*100)}%</text></svg>`;}
+function rCore(late,low){const D=RDATA,n=D.length||1,on=D.filter(x=>x.online===1).length,kw=D.reduce((a,x)=>a+(+x.kw||0),0),live=D.reduce((a,x)=>a+(+x.last_power_kw||0),0),
+ withT=D.filter(x=>x.today_kwh!=null&&x.kw),tk=D.reduce((a,x)=>a+(+x.today_kwh||0),0),tkw=withT.reduce((a,x)=>a+(+x.kw||0),0),y=tkw?withT.reduce((a,x)=>a+(+x.today_kwh||0),0)/tkw:0,al=D.filter(x=>x.alerts).length;
+ const g=(svg,v,l)=>`<div class="gauge">${svg}<div><div class="gv">${v}</div><div class="gl">${l}</div></div></div>`;
+ $('rCore').innerHTML=g(ring(on/n,'#3cf08a'),`${on}/${D.length}`,'Systems online')+g(ring(kw?live/kw:0,'#38f0c8'),`${live.toFixed(1)} kW`,'Live power')+g(ring(Math.min(1,y/4.5),'#3ec7ff'),`${Math.round(tk)} kWh`,'Generated today')+
+  g(ring(Math.min(1,y/4.5),y<low&&late?'#ffad3b':'#3ec7ff'),`${y.toFixed(2)}`,'kWh per kW today')+g(ring(al/n,al?'#ff5d6c':'#3cf08a'),String(al),'Systems with alerts');}
 function rDraw(){const low=+(window.LOWGEN||2.5),late=new Date().getHours()>=17,qq=($('rFind').value||'').toLowerCase().trim();
  const yieldOf=x=>x.kw&&x.today_kwh!=null?x.today_kwh/x.kw:null;
  const tests={'':()=>true,ok:x=>rState(x)[0]==='ok',bad:x=>['bad','err'].includes(rState(x)[0]),alerts:x=>!!x.alerts,low:x=>late&&yieldOf(x)!=null&&yieldOf(x)<low,unlinked:x=>!x.project_ext_id,ow:x=>!!x.no_alerts};
  const cnt=k=>RDATA.filter(tests[k]).length;
+ rCore(late,low);
  const chips=[['','All'],['ok','Online'],['bad','Offline / no data'],['alerts','With alerts'],...(late?[['low','Low generation today']]:[]),['unlinked','Not linked'],['ow','Out of warranty']];
  $('rStats').innerHTML=chips.map(([k,t])=>`<button class="chip ${RF===k?'on':''} c-${k||'all'}" onclick="RF='${k}';rDraw()"><b>${cnt(k)}</b>${t}</button>`).join('');
  let l=RDATA.filter(tests[RF]||tests['']).filter(x=>!qq||`${x.customer||''} ${x.serial} ${x.logger_serial||''} ${x.area||''} ${x.phone||''} ${x.project_ext_id||''} ${x.pincode||''}`.toLowerCase().includes(qq));
@@ -97,7 +105,7 @@ async function rTest(id){const r=await api('/api/rms/debug/'+id);
  alert(r.ok?`OK (${r.used})\nNow: ${r.power_kw??'-'} kW\nToday: ${r.today_kwh??'-'} kWh\nTotal: ${r.total_kwh??'-'} kWh\n\nRaw reply:\n${r.raw}`:`FAILED (${r.used||''})\n${r.message}`);}
 async function rDel(id){if(confirm('Remove this inverter link?')){await api('/api/rms/devices/'+id,{method:'DELETE'});rmsPage();}}
 async function rRefresh(){await api('/api/rms/refresh',{method:'POST'});alert('Refresh started – reload this tab in a minute.');}
-const ATYPE={FAULT:'#c62828',GRID:'#455a64',OFFLINE:'#6d4c41',LOW_GEN:'#ef6c00',CLEANING:'#0091ea'};
+const ATYPE={FAULT:'#ff5d6c',GRID:'#9fb3c8',OFFLINE:'#ff8a65',LOW_GEN:'#ffad3b',CLEANING:'#3ec7ff'};
 const ANAME={FAULT:'Inverter fault – engineer needed',GRID:'Grid fault – no engineer needed',OFFLINE:'No data / offline',LOW_GEN:'Low generation',CLEANING:'Cleaning needed'};
 async function badge(){try{const c=await api('/api/alerts/count');const b=$('aBadge');if(c.open){b.style.display='';b.textContent=c.due?`${c.open} (${c.due} due)`:c.open;}else b.style.display='none';}catch(e){}}
 setInterval(badge,60000);
