@@ -64,6 +64,13 @@ async function upsertService(x){const ext=String(x.ticket_id??x.ext_id??'').trim
 async function fillPin(pin,lat,lng){for(const t of ['enquiries','projects','service'])await q(`UPDATE ${t} SET lat=?,lng=? WHERE pincode=? AND lat IS NULL`,[lat,lng,pin]);}
 async function upsertPincode(p){await q('REPLACE INTO pincodes(pincode,lat,lng,area,source) VALUES(?,?,?,?,?)',[String(p.pincode),+p.lat,+p.lng,p.area??null,'manual']);await fillPin(String(p.pincode),+p.lat,+p.lng);}
 async function bulk(fn,items){const errors=[];let ok=0;for(let i=0;i<items.length;i++){try{await fn(items[i]);ok++;}catch(e){errors.push({index:i,error:e.message});}}return{received:items.length,saved:ok,errors};}
+// Inverter sites without coordinates: geocode the city name (Nominatim, cached per city in kv_state)
+async function geocodeSites(max=8){const rows=await q("SELECT DISTINCT city FROM rms_devices WHERE site_lat IS NULL AND city IS NOT NULL AND city<>'' LIMIT 40");let done=0;
+ for(const {city} of rows){const key='city:'+String(city).toLowerCase().slice(0,70);let v=(await one('SELECT v FROM kv_state WHERE k=?',[key]))?.v;
+  if(!v){if(done>=max)continue;done++;try{const j=await (await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(city+', India')}&countrycodes=in&format=json&limit=1`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'}})).json();
+   v=j[0]?`${(+j[0].lat).toFixed(4)},${(+j[0].lon).toFixed(4)}`:'none';await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',[key,v]);}catch(e){continue;}await new Promise(r=>setTimeout(r,1200));}
+  if(v&&v!=='none'){const [la,ln]=v.split(',').map(Number);await q('UPDATE rms_devices SET site_lat=?,site_lng=? WHERE city=? AND site_lat IS NULL',[la,ln,city]);}}
+ return done;}
 // Pincode geocoding via free OpenStreetMap Nominatim (run from cron, max 1 req/sec)
 async function geocodeBatch(max=20){const pins=await q(`SELECT DISTINCT pincode FROM (SELECT pincode FROM projects WHERE lat IS NULL UNION SELECT pincode FROM enquiries WHERE lat IS NULL UNION SELECT pincode FROM service WHERE lat IS NULL) x
  WHERE pincode REGEXP '^[0-9]{6}$' AND pincode NOT IN (SELECT pincode FROM pincodes) LIMIT ?`,[max]);let done=0;
@@ -296,7 +303,7 @@ app.get('/api/admin/keys',auth(['admin']),(req,res)=>{const host=req.get('host')
 app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v FROM kv_state WHERE k='last_tick'");res.json({last_tick:r?r.v:null});}));
 async function runTick(force){if(running)return{skipped:'already running'};running=true;
  try{const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!force){running=false;return({skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});}}catch(e){running=false;throw e;}
- const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
+ const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}
  finally{running=false;}return out;}
@@ -334,8 +341,11 @@ app.get('/public/stats',W(async(req,res)=>{if(Date.now()-pubCache.t<5*60e3&&pubC
  const proj=await one("SELECT COUNT(*) n,SUM(capacity_kw) kw FROM projects WHERE stage IN ('NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED')");
  const al=await one("SELECT COUNT(*) n,SUM(resolved_by='AUTO') auto,AVG(TIMESTAMPDIFF(MINUTE,STR_TO_DATE(LEFT(opened_at,19),'%Y-%m-%dT%H:%i:%s'),STR_TO_DATE(LEFT(resolved_at,19),'%Y-%m-%dT%H:%i:%s'))) mins FROM alerts WHERE status='RESOLVED' AND opened_at>=?",[new Date(Date.now()-30*864e5).toISOString()]);
  const openA=await one("SELECT COUNT(*) n FROM alerts WHERE status='OPEN'");
- const areas=(await q(`SELECT p.pincode,MAX(p.area) area,ROUND(AVG(p.lat),2) lat,ROUND(AVG(p.lng),2) lng,COUNT(*) systems,SUM(COALESCE(d.capacity_kw,p.capacity_kw)) kw,SUM(d.today_kwh) today
-  FROM rms_devices d JOIN projects p ON p.ext_id=d.project_ext_id WHERE p.lat IS NOT NULL GROUP BY p.pincode HAVING systems>=3`)).map(a=>({area:(a.area||'').split(',')[0],lat:a.lat,lng:a.lng,systems:a.systems,kw:+(+a.kw||0).toFixed(0),kwh_per_kw:a.kw&&a.today?+(a.today/a.kw).toFixed(2):null}));
+ // Area map: linked AND not-yet-linked inverters (site location from the inverter cloud / city). Grouped into ~25 km clusters; only cells with 3+ systems are shown (privacy).
+ const pts=await q(`SELECT COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,COALESCE(p.area,d.city) area,COALESCE(d.capacity_kw,p.capacity_kw) kw,d.today_kwh FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id WHERE COALESCE(p.lat,d.site_lat) IS NOT NULL`);
+ const cl=[];for(const x of pts){let c=cl.find(c=>dist(c.lat/c.n,c.lng/c.n,+x.lat,+x.lng)<=25);if(!c){c={n:0,lat:0,lng:0,kw:0,today:0,kwToday:0,names:{}};cl.push(c);}
+  c.n++;c.lat+=+x.lat;c.lng+=+x.lng;c.kw+=+x.kw||0;if(x.today_kwh!=null&&x.kw){c.today+=+x.today_kwh;c.kwToday+=+x.kw;}const nm=String(x.area||'').split(',')[0].trim();if(nm)c.names[nm]=(c.names[nm]||0)+1;}
+ const areas=cl.filter(c=>c.n>=3).map(c=>({area:Object.entries(c.names).sort((a,b)=>b[1]-a[1])[0]?.[0]||'',lat:+(c.lat/c.n).toFixed(2),lng:+(c.lng/c.n).toFixed(2),systems:c.n,kw:Math.round(c.kw),kwh_per_kw:c.kwToday?+(c.today/c.kwToday).toFixed(2):null}));
  const life=+sys.life||0;
  pubCache={t:Date.now(),v:{systems_monitored:+sys.n||0,monitored_kw:Math.round(+sys.kw||0),live_kw:+(+sys.live||0).toFixed(1),today_kwh:Math.round(+today.k||0),lifetime_mwh:+(life/1000).toFixed(1),
   co2_tonnes:+(life*0.82/1000).toFixed(1),trees:Math.round(life*0.82/21),installed_projects:+proj.n||0,installed_kw:Math.round(+proj.kw||0),
