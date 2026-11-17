@@ -12,11 +12,14 @@
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
-    "express": "^4.19.2",
+    "express": "^4.22.3",
     "express-mysql-session": "^3.0.3",
-    "express-session": "^1.18.0",
-    "multer": "^1.4.5-lts.1",
-    "mysql2": "^3.11.0",
+    "express-session": "^1.19.0",
+    "multer": "^2.5.0",
+    "mysql2": "^3.24.6",
     "xlsx": "^0.18.5"
+  },
+  "overrides": {
+    "mysql2": "$mysql2"
   }
 }
