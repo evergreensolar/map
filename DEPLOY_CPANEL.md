@@ -60,5 +60,7 @@ Wait 10 seconds and open the site again, then login.
 ## Rebuild / redeploy (Hostinger)
 - Settings are saved outside the app folder (~/.evergreen-fieldmap.env) and keys are stored in the database, so a rebuild keeps everything.
 - If the "Database connection" page ever appears after a rebuild: enter the same database name/user/password, leave the admin fields empty. All data stays; cron command and ERP key stay the same.
-- Extra-safe option: in Hostinger's app settings add environment variables DB_HOST, DB_NAME, DB_USER, DB_PASSWORD once.
+- The Setup page now lists every place it looked for the settings file (✅ found / ✗ not found), and the Setup-complete page lists where it saved it.
+- If the database is briefly unreachable right after a redeploy, the app retries for about 1 minute before showing the Setup page.
+- **Permanent fix (recommended):** in Hostinger's Web App settings, add Environment variables DB_HOST, DB_NAME, DB_USER, DB_PASSWORD once. Those are kept on every redeploy, so the Setup page never comes back.
 - Admins can see the cron command and ERP key any time in the API Docs tab.

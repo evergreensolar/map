@@ -1,8 +1,12 @@
 // Evergreen Solar - Field Operations Map (MySQL version, for cPanel Node.js shared hosting)
 const fs=require('fs'),path=require('path');
 const os=require('os');
-const CONFIG_HOME=process.env.FIELDMAP_CONFIG||path.join(os.homedir(),'.evergreen-fieldmap.env'); // outside app folder: survives Hostinger rebuilds
-for(const f of [CONFIG_HOME,path.join(__dirname,'.env')])try{fs.readFileSync(f,'utf8').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*([\w]+)\s*=\s*(.*)\s*$/);if(m&&!process.env[m[1]])process.env[m[1]]=m[2];});}catch(e){}
+const CONFIG_NAME='.evergreen-fieldmap.env';
+// Settings file is written to several places OUTSIDE the app folder (Hostinger rebuild replaces the app folder); first one found is read.
+const CONFIG_FILES=[...new Set([process.env.FIELDMAP_CONFIG,path.join(os.homedir(),CONFIG_NAME),path.join(__dirname,'..',CONFIG_NAME),path.join(__dirname,'..','..',CONFIG_NAME),path.join(__dirname,'.env')].filter(Boolean).map(f=>path.resolve(f)))];
+const CONFIG_FOUND=[];
+for(const f of CONFIG_FILES)try{fs.readFileSync(f,'utf8').split(/\r?\n/).forEach(l=>{const m=l.match(/^\s*([\w]+)\s*=\s*(.*?)\s*$/);if(m&&!process.env[m[1]])process.env[m[1]]=m[2];});CONFIG_FOUND.push(f);}catch(e){}
+console.log('Config files found:',CONFIG_FOUND.join(', ')||'none','| DB from',process.env.DB_NAME?(CONFIG_FOUND.length?'file/env':'env'):'nowhere');
 const express=require('express'),session=require('express-session'),MySQLStore=require('express-mysql-session')(session),bcrypt=require('bcryptjs'),mysql=require('mysql2/promise'),multer=require('multer'),XLSX=require('xlsx');
 const PORT=process.env.PORT||3000;let ERP_KEY=process.env.ERP_API_KEY||'',CRON_KEY=process.env.CRON_KEY||'';
 const DBCFG={host:process.env.DB_HOST||'localhost',port:+(process.env.DB_PORT||3306),user:process.env.DB_USER,password:process.env.DB_PASSWORD,database:process.env.DB_NAME};
@@ -336,7 +340,7 @@ function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended
  <br><br><b>Admin login</b> <small>(leave empty if you already created one – your data is kept)</small><label>Your name</label><input name="ADMIN_NAME" value="Suva"><label>Username</label><input name="ADMIN_USER">
  <label>Password (min 8 characters)</label><input name="ADMIN_PASS" type="password" minlength="8">
  <label>Office location (lat,lng)</label><input name="OFFICE_LATLNG" value="22.6470,88.4400"><button>Save &amp; start</button></form>`}</body></html>`;
- sa.get('*',(req,res)=>res.send(page(errMsg&&!/missing/i.test(errMsg)?'Database connection failed: '+errMsg:'')));
+ sa.get('*',(req,res)=>res.send(page((errMsg&&!/missing/i.test(errMsg)?'Database connection failed: '+errMsg:'')+`<br><small style="color:#555">Settings files looked for: ${CONFIG_FILES.map(f=>f+(CONFIG_FOUND.includes(f)?' ✅':' ✗')).join('<br>')}</small>`)));
  sa.post('/setup',async(req,res)=>{const b=req.body;const cfg={host:b.DB_HOST||'localhost',port:3306,user:b.DB_USER,password:b.DB_PASSWORD,database:b.DB_NAME};
   try{const c=await mysql.createConnection(cfg);for(const sql of SCHEMA)await c.query(sql);
    const admins=(await c.query("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1"))[0][0].n;
@@ -347,15 +351,17 @@ function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended
    const key=async k=>{const r=(await c.query('SELECT v FROM kv_state WHERE k=?',[k]))[0][0];if(r)return{v:r.v,old:true};const v=rnd();await c.query('REPLACE INTO kv_state(k,v) VALUES(?,?)',[k,v]);return{v,old:false};};
    const cron=await key('cfg_cron_key'),erpk=await key('cfg_erp_key');await c.end();
    const lines=[`DB_HOST=${cfg.host}`,`DB_NAME=${cfg.database}`,`DB_USER=${cfg.user}`,`DB_PASSWORD=${cfg.password}`,`OFFICE_LATLNG=${b.OFFICE_LATLNG||'22.6470,88.4400'}`].join('\n')+'\n';
-   let where='';for(const f of [CONFIG_HOME,path.join(__dirname,'.env')]){try{fs.writeFileSync(f,lines,{mode:0o600});where=where||f;}catch(e){}}
+   const saved=[];for(const f of CONFIG_FILES){try{fs.writeFileSync(f,lines,{mode:0o600});saved.push(f);}catch(e){}}const where=saved.join('<br>');
    const host=req.get('host');
-   res.send(page(`Database connected. ${adminMsg}<br>${cron.old?'<b>Your existing cron command and ERP key are unchanged</b> – nothing to update.':'<b>New keys created – copy these:</b>'}<br><br>Cron command (every 15 min):<br><code style="font-size:11px;word-break:break-all">curl -s "https://${host}/cron/tick?key=${cron.v}" &gt; /dev/null</code><br><br>ERP API key: <code style="word-break:break-all">${erpk.v}</code><br><br><small>Admins can see these any time in the app: API Docs tab.<br>Settings saved to: ${where||'(could not save – use Hostinger environment variables)'}</small>`,true));
+   res.send(page(`Database connected. ${adminMsg}<br>${cron.old?'<b>Your existing cron command and ERP key are unchanged</b> – nothing to update.':'<b>New keys created – copy these:</b>'}<br><br>Cron command (every 15 min):<br><code style="font-size:11px;word-break:break-all">curl -s "https://${host}/cron/tick?key=${cron.v}" &gt; /dev/null</code><br><br>ERP API key: <code style="word-break:break-all">${erpk.v}</code><br><br><small>Admins can see these any time in the app: API Docs tab.<br>Settings saved to:<br>${where||'(could not save – use Hostinger environment variables)'}<br><b>Safest:</b> also add DB_HOST, DB_NAME, DB_USER, DB_PASSWORD as Environment variables in Hostinger app settings – then this page never comes back.</small>`,true));
    setTimeout(()=>process.exit(0),1500);
   }catch(e){res.send(page('Could not connect: '+e.message+'. Check database name, user and password (user must be added to the database with ALL PRIVILEGES).'));}});
  sa.listen(PORT,()=>console.log('Setup wizard running on port',PORT));}
 (async()=>{
  if(!process.env.DB_NAME||!process.env.DB_USER)return setupApp('missing');
- try{await initDB();}catch(e){console.error('DB failed:',e.message);return setupApp(e.message);}
+ // Settings exist: a DB hiccup right after redeploy must NOT show the setup page – retry for ~1 minute first
+ for(let i=1;;i++){try{await initDB();break;}catch(e){console.error('DB failed (try '+i+'):',e.message);
+  if(i>=6||/access denied|unknown database/i.test(e.message))return setupApp(e.message);await new Promise(r=>setTimeout(r,10000));}}
  await loadSettings();
  const keyFromDB=async(k,envv)=>{const r=await one('SELECT v FROM kv_state WHERE k=?',[k]);if(envv){if(!r||r.v!==envv)await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',[k,envv]);return envv;}
   if(r)return r.v;const v=crypto.randomBytes(24).toString('hex');await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',[k,v]);return v;};
