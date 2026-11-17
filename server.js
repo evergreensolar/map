@@ -178,6 +178,26 @@ app.get('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const sv=Object.f
  res.json(RMS.BRANDS.map(b=>({brand:b,configured:RMS.configured(b),fields:RMS.connectors[b].env.map(k=>({key:k,secret:SECRET.test(k),set:!!(sv[k]||process.env[k]),value:SECRET.test(k)?'':(sv[k]||process.env[k]||'')}))})));}));
 app.post('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const ok=new Set(RMS.BRANDS.flatMap(b=>RMS.connectors[b].env));
  for(const [k,v] of Object.entries(req.body||{}))if(ok.has(k)&&v!==''&&v!=null)await q('REPLACE INTO settings(k,v) VALUES(?,?)',[k,String(v).trim()]);await loadSettings();res.json({ok:true});}));
+// ---- Pull from ERP (when the ERP offers GET/list URLs). Same field names as the push API. ----
+const ERP_PULL_KEYS=['ERP_PULL_BASE','ERP_PULL_KEY','ERP_PULL_HEADER','ERP_PULL_PROJECTS','ERP_PULL_ENQUIRIES','ERP_PULL_SERVICE'];
+async function erpGetAll(path){const base=String((await one("SELECT v FROM settings WHERE k='ERP_PULL_BASE'"))?.v||'').trim().replace(/\/+$/,'');if(!base)throw new Error('ERP pull URL not set');
+ const key=(await one("SELECT v FROM settings WHERE k='ERP_PULL_KEY'"))?.v||'',hdr=(await one("SELECT v FROM settings WHERE k='ERP_PULL_HEADER'"))?.v||'X-API-Key';
+ let url=/^https?:/.test(path)?path:base+(path.startsWith('/')?path:'/'+path);const out=[];let first=null;
+ for(let page=0;page<200&&url;page++){const r=await fetch(url,{headers:{[hdr]:hdr.toLowerCase()==='authorization'&&!/^(bearer|basic|token) /i.test(key)?'Bearer '+key:key,'Accept':'application/json','User-Agent':'SmartEvergreen-FieldMap/1.0'},signal:AbortSignal.timeout(30000)});
+  const txt=await r.text();let j;try{j=JSON.parse(txt);}catch(e){throw new Error(`HTTP ${r.status} from ERP, not JSON: ${txt.replace(/\s+/g,' ').slice(0,160)}`);}
+  if(!r.ok)throw new Error(`HTTP ${r.status} from ERP: ${JSON.stringify(j).slice(0,160)}`);
+  const list=Array.isArray(j)?j:(j.data||j.items||j.results||j.records||j.rows||[]);out.push(...list);first=first||list[0]||null;
+  const nx=!Array.isArray(j)&&(j.next||j.next_page_url||j.links?.next||j.meta?.next);url=nx?(/^https?:/.test(nx)?nx:base+nx):null;}
+ return{list:out,first};}
+async function erpPull(){const cfg=Object.fromEntries((await q("SELECT k,v FROM settings WHERE k LIKE 'ERP_PULL_%'")).map(x=>[x.k,x.v]));if(!cfg.ERP_PULL_BASE)return null;const res={};
+ for(const [t,fn,def] of [['projects',upsertProject,'/projects'],['enquiries',upsertEnquiry,'/enquiries'],['service',upsertService,'/service']]){
+  const path=cfg['ERP_PULL_'+t.toUpperCase()]??def;if(!path||path==='-')continue;
+  try{const {list,first}=await erpGetAll(path);const r=await bulk(fn,list);res[t]={...r,errors:r.errors.slice(0,5),sample_fields:first?Object.keys(first).slice(0,30):[]};}catch(e){res[t]={error:e.message};}}
+ await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_last',?)",[JSON.stringify({at:now(),res}).slice(0,200)]);return res;}
+app.get('/api/erp-pull',auth(['admin']),W(async(req,res)=>{const sv=Object.fromEntries((await q("SELECT k,v FROM settings WHERE k LIKE 'ERP_PULL_%'")).map(x=>[x.k,x.v]));
+ res.json({fields:ERP_PULL_KEYS.map(k=>({key:k,set:!!sv[k],value:k==='ERP_PULL_KEY'?'':(sv[k]||'')})),last:(await one("SELECT v FROM kv_state WHERE k='erp_pull_last'"))?.v||null});}));
+app.post('/api/erp-pull/settings',auth(['admin']),W(async(req,res)=>{for(const [k,v] of Object.entries(req.body||{}))if(ERP_PULL_KEYS.includes(k)&&v!=null&&v!=='')await q('REPLACE INTO settings(k,v) VALUES(?,?)',[k,String(v).trim()]);res.json({ok:true});}));
+app.post('/api/erp-pull/run',auth(['admin']),W(async(req,res)=>{const r=await erpPull();res.json(r||{error:'Enter the ERP URL first'});}));
 app.post('/api/rms/test/:brand',auth(['admin']),W(async(req,res)=>{const c=RMS.connectors[req.params.brand];if(!c)return res.status(404).json({error:'unknown'});
  try{if(!RMS.configured(req.params.brand))throw new Error('credentials not set');let msg='Connected';if(c.testInfo)msg=await c.testInfo();else if(c.token)await c.token();res.json({ok:true,message:msg});}catch(e){res.json({ok:false,message:e.message});}}));
 app.get('/api/rms/brands',auth(),(req,res)=>res.json(RMS.BRANDS.map(b=>({brand:b,configured:RMS.configured(b)}))));
@@ -363,7 +383,8 @@ app.get('/api/admin/keys',auth(['admin']),(req,res)=>{const host=req.get('host')
 app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v FROM kv_state WHERE k='last_tick'");res.json({last_tick:r?r.v:null});}));
 async function runTick(force){if(running)return{skipped:'already running'};running=true;
  try{const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!force){running=false;return({skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});}}catch(e){running=false;throw e;}
- const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
+ const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);
+  {const lp=await one("SELECT v FROM kv_state WHERE k='erp_pull_at'");if(!lp||Date.now()-Date.parse(lp.v)>55*60e3){await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_at',?)",[new Date().toISOString()]);try{out.erp_pull=await erpPull();}catch(e){out.erp_pull={error:e.message};}}}for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}
  finally{running=false;}return out;}

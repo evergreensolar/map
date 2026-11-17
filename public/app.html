@@ -280,7 +280,7 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <div style="max-width:300px"><label>Name</label><input id="uN"><label>Username</label><input id="uU"><label>Password</label><input id="uP">
 <label>Role</label><select id="uR"><option>sales</option><option>engineer</option><option>manager</option><option>admin</option></select><label>Team</label><input id="uT">
 <button class="b" onclick="addUser()">Add</button></div></div>
-<div id="docsPage" class="page"><button class="b" style="width:250px" onclick="location='/docs/download'">Download API spec (for ERP team)</button><div id="docBody"></div></div>
+<div id="docsPage" class="page"><div id="erpPullBox"></div><button class="b" style="width:250px" onclick="location='/docs/download'">Download API spec (for ERP team)</button><div id="docBody"></div></div>
 </main>
 <script>
 function toggleTheme(){const t=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=t;try{localStorage.setItem('ef_theme',t);}catch(e){}themeLabels();}

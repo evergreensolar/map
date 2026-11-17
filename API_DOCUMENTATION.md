@@ -139,3 +139,18 @@ Required: customer_name, phone, email, pincode, segment (DOMESTIC or COMMERCIAL)
 Then `POST /erp/v1/web-enquiries/ack` with `["WEB-LZ8K2A", ...]` to mark them received. Response: `{"ok":true,"acknowledged":<refs found>,"received":<refs sent>,"unknown":<refs not found>}`.
 
 Please use `ref` as the ERP enquiry reference so the same enquiry is not created twice.
+
+## 12. Alternative: Field Map PULLS from the ERP (read-only GET URLs)
+If pushing is not convenient, the ERP can expose **three read-only GET URLs**; the Field Map pulls them every hour (admin can also press "Pull now" in the API Docs tab).
+
+| Data | Default path | Same fields as |
+|---|---|---|
+| Projects | `GET {ERP_BASE}/projects` | section 3 (`project_id`, `customer_name`, `phone`, `address`, `pincode`, `lat`, `lng`, `capacity_kw`, `stage`, dates, `engineer`, `team`) |
+| Enquiries | `GET {ERP_BASE}/enquiries` | section 2 |
+| Service tickets | `GET {ERP_BASE}/service` | section 4A |
+
+- Auth: one key in a header – `X-API-Key: <key>` (or `Authorization: Bearer <key>`). The key is entered by our admin in the app; it is never put in code.
+- Response: a JSON array, or an object with the list in `data` / `items` / `results` / `records` / `rows`.
+- Paging (optional): include `next` (or `next_page_url`, `links.next`, `meta.next`) with the URL/path of the next page; the Field Map follows it until it is empty.
+- Paths can be changed in the app if the ERP uses different ones.
+- Please send us: the base URL, the key, and one sample response.
