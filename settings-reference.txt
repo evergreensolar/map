@@ -15,7 +15,7 @@ DB_POOL=5
 
 # ---- Background jobs ----
 CRON_MAX_SECONDS=240
-INTERNAL_SCHEDULER=0
+INTERNAL_SCHEDULER=1   # 1 = server fetches data by itself every 15 min (default). Keep the Hostinger cron as backup.
 
 # ---- Alerts / smart cleaning ----
 ALERT_FOLLOWUP_HOURS=24

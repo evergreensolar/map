@@ -64,3 +64,8 @@ Wait 10 seconds and open the site again, then login.
 - If the database is briefly unreachable right after a redeploy, the app retries for about 1 minute before showing the Setup page.
 - **Permanent fix (recommended):** in Hostinger's Web App settings, add Environment variables DB_HOST, DB_NAME, DB_USER, DB_PASSWORD once. Those are kept on every redeploy, so the Setup page never comes back.
 - Admins can see the cron command and ERP key any time in the API Docs tab.
+
+## Background data (app closed)
+- The server fetches inverter data by itself every 15 min while it runs (built-in timer, `INTERNAL_SCHEDULER=1` by default).
+- Keep the Hostinger cron as a backup (it wakes the app if Hostinger ever puts it to sleep). Both together never double-fetch: a run is skipped if one happened in the last 12 min.
+- The app header shows "Inverter data updated X min ago". If it turns orange (over 40 min), the background job has stopped – check the Hostinger cron.

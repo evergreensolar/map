@@ -282,8 +282,11 @@ app.post('/api/rms/evaluate',auth(['admin','manager']),W(async(req,res)=>{const 
 // ---- CRON (shared hosting: app sleeps, so cPanel cron calls this every 15 min) ----
 let running=false;
 app.get('/api/admin/keys',auth(['admin']),(req,res)=>{const host=req.get('host');res.json({cron_command:`curl -s "https://${host}/cron/tick?key=${CRON_KEY}" > /dev/null`,erp_api_key:ERP_KEY,erp_base_url:`https://${host}/erp/v1`});});
+app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v FROM kv_state WHERE k='last_tick'");res.json({last_tick:r?r.v:null});}));
 app.get('/cron/tick',W(async(req,res)=>{if(!CRON_KEY||req.query.key!==CRON_KEY)return res.status(401).json({error:'bad key'});if(running)return res.json({ok:true,skipped:'already running'});
- running=true;const out={},t0=Date.now();try{out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
+ // Hostinger cron AND the built-in timer both call this – run at most once per 12 min so inverter APIs are not hit twice
+ const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!req.query.force)return res.json({ok:true,skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});
+ running=true;await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);const out={},t0=Date.now();try{out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.geocoded=await geocodeBatch(15);for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}
  finally{running=false;}res.json({ok:true,...out});}));
@@ -370,5 +373,6 @@ function setupApp(errMsg){const sa=express();sa.use(express.urlencoded({extended
   if(!u||!pw){console.log('Usage: node server.js --create-admin <username> <password> "<Full Name>"');process.exit(1);}
   await q('REPLACE INTO users(name,username,password_hash,role,active) VALUES(?,?,?,?,1)',[name||u,u,bcrypt.hashSync(pw,10),'admin']);console.log('Admin created:',u);process.exit(0);}
  app.listen(PORT,()=>console.log('Evergreen Field Map running on port',PORT));
- if(process.env.INTERNAL_SCHEDULER==='1')setInterval(()=>fetch(`http://127.0.0.1:${PORT}/cron/tick?key=${CRON_KEY}`).catch(()=>{}),15*60e3);
+ // Built-in timer (default ON): keeps fetching data while the server runs, even if nobody has the app open. Hostinger cron is the backup.
+ if(process.env.INTERNAL_SCHEDULER!=='0'){const tick=()=>fetch(`http://127.0.0.1:${PORT}/cron/tick?key=${CRON_KEY}`).catch(()=>{});setTimeout(tick,60e3);setInterval(tick,5*60e3);}
 })().catch(e=>{console.error('Startup failed:',e.message);setupApp(e.message);});
