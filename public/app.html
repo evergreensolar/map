@@ -1,4 +1,4 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive,noai,noimageai"><meta name="viewport" content="width=device-width,initial-scale=1">
+<!DOCTYPE html><html><head><meta charset="utf-8"><script>try{document.documentElement.dataset.theme=localStorage.getItem("ef_theme")||"dark"}catch(e){document.documentElement.dataset.theme="dark"}</script><meta name="robots" content="noindex,nofollow,noarchive,noai,noimageai"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Evergreen Solar – Field Map</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -143,19 +143,50 @@ a.lnk{color:#eafffa;text-decoration:none;border-bottom:1px dashed rgba(56,240,20
 #login h2 small{display:block;font:500 10.5px var(--mono);letter-spacing:2.6px;text-transform:uppercase;color:var(--neon);margin-top:8px}
 #login .mark{display:block}#login .mark svg{filter:drop-shadow(0 0 10px rgba(56,240,200,.8));animation:spin 10s linear infinite}
 #lerr{color:var(--red)!important}
+
+/* ===== Light ("normal") theme ===== */
+html[data-theme=light]{--bg:#f3f6f5;--card:#ffffff;--card2:#f7faf9;--ink:#1c2b28;--muted:#5d716d;--line:rgba(15,110,95,.18);--line2:rgba(15,110,95,.09);
+ --neon:#0d9b7a;--cyan:#0a7cb0;--sun:#c98a00;--red:#d23a48;--amber:#c47800;--ok:#17924f;--forest:#0d9b7a;--forest2:#0b8a6c;--moss:#0d9b7a;--gold:#0a7cb0;
+ --glow:0 1px 2px rgba(20,40,35,.06),0 6px 20px rgba(20,40,35,.07);--sh:var(--glow)}
+html[data-theme=light] body{background:radial-gradient(900px 500px at 85% -10%,rgba(10,124,176,.07),transparent 60%),#f3f6f5}
+html[data-theme=light] header{background:#ffffff;border-bottom:1px solid var(--line)}
+html[data-theme=light] header .brand a{color:#0f3d33;text-shadow:none}html[data-theme=light] header button{color:#46605a}html[data-theme=light] header button:hover{color:#0f3d33;text-shadow:none}
+html[data-theme=light] header button.on{text-shadow:none}html[data-theme=light] header .brand svg,html[data-theme=light] #login .mark svg{filter:none}
+html[data-theme=light] #side,html[data-theme=light] #genPage>div:first-child{background:#f8fbfa!important}
+html[data-theme=light] .page h3,html[data-theme=light] b,html[data-theme=light] .chip b,html[data-theme=light] .gauge .gv,html[data-theme=light] a.lnk,html[data-theme=light] #dTitle b{color:#14302a;text-shadow:none}
+html[data-theme=light] .page h3::after{box-shadow:none}
+html[data-theme=light] select,html[data-theme=light] input,html[data-theme=light] textarea{background:#fff;color-scheme:light}html[data-theme=light] select option{background:#fff;color:var(--ink)}
+html[data-theme=light] select[multiple] option:checked{background:#d7efe8 linear-gradient(#d7efe8,#d7efe8);color:#0f3d33}
+html[data-theme=light] th{background:#eef5f3}
+html[data-theme=light] #aList>div,html[data-theme=light] #connBox>div>div,html[data-theme=light] #unmapBox>div{background:#fff!important}
+html[data-theme=light] #aList>div[style*="fff8e1"]{background:linear-gradient(90deg,#fff3dc,#fff 40%)!important}
+html[data-theme=light] .qf{background:#f6faf9}html[data-theme=light] pre{background:#f6faf9;color:#0b6e57}
+html[data-theme=light] .drawer{background:rgba(255,255,255,.98)}
+html[data-theme=light] .gauge::before{display:none}html[data-theme=light] .chip.c-ok b,html[data-theme=light] .chip.c-bad b{text-shadow:none}
+html[data-theme=light] .chip.c-ok b{color:var(--ok)}html[data-theme=light] .chip.c-bad b{color:var(--red)}html[data-theme=light] .chip.c-alerts b,html[data-theme=light] .chip.c-low b{color:var(--amber)}
+html[data-theme=light] .chip.on{background:#e9f6f2}
+html[data-theme=light] button.b{color:#fff;background:linear-gradient(135deg,#0fa784,#0a85bd);box-shadow:0 2px 10px rgba(13,155,122,.25)}
+html[data-theme=light] #map .leaflet-tile-pane,html[data-theme=light] #gmap .leaflet-tile-pane{filter:none}
+html[data-theme=light] .leaflet-container{background:#e8eeec}html[data-theme=light] .leaflet-popup-content-wrapper,html[data-theme=light] .leaflet-popup-tip{background:#fff}
+html[data-theme=light] .leaflet-bar a{background:#fff}html[data-theme=light] .leaflet-control-attribution{background:rgba(255,255,255,.8)!important}
+html[data-theme=light] #login{background:radial-gradient(700px 500px at 50% 40%,rgba(13,155,122,.12),transparent 70%),#eef4f2}
+html[data-theme=light] #login>div{background:#fff;box-shadow:0 30px 80px rgba(20,40,35,.18)}html[data-theme=light] #login h2{color:#0f3d33;text-shadow:none}
+html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{color:var(--neon)!important}
+.themebtn{background:transparent;border:1px solid var(--line)!important;border-radius:999px!important;padding:5px 10px!important;margin:0 6px;font:600 12px var(--mono)!important;color:var(--neon)!important;cursor:pointer}
+#login .themebtn{position:absolute;top:16px;right:16px;z-index:2}
 @media (max-width:1500px){header .brand small{display:none}}
 @media (max-width:760px){main{flex-direction:column}#side,#genPage>div:first-child{width:100%;max-height:42vh;border-right:0!important;border-bottom:1px solid var(--line)!important}
  #mapPage,#genPage{flex-direction:column}#map,#gmap{min-height:55vh}.page{padding:18px 16px 40px}header .brand small{display:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 @media print{header,#side{display:none}.page{padding:0}body{background:#fff;color:#000}}
 </style></head><body>
-<div id="login"><div><span class="mark"><svg width="44" height="44" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#38f0c8" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#3ec7ff"/></svg></span><h2>Smart Evergreen<small>AI monitoring core · sign in</small></h2>
+<div id="login"><button class="themebtn" onclick="toggleTheme()" title="Switch dark / normal theme">☀ Normal</button><div><span class="mark"><svg width="44" height="44" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#38f0c8" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#3ec7ff"/></svg></span><h2>Smart Evergreen<small>AI monitoring core · sign in</small></h2>
 <label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')login()">
 <button class="b" onclick="login()">Login</button><p id="lerr" style="color:red"></p></div></div>
 <header><b class="brand"><a href="/"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#38f0c8" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#3ec7ff"/></svg><span>Smart Evergreen</span></a><small>AI · Field Ops</small></b>
 <button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="todayPage" onclick="show(this)">◉ Today</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
 <button data-p="importPage" onclick="show(this)" class="adm">Import</button><button data-p="usersPage" onclick="show(this)" class="adm">Users</button>
-<button data-p="docsPage" onclick="show(this)">API Docs</button><span id="me"></span><button onclick="logout()">Logout</button></header>
+<button data-p="docsPage" onclick="show(this)">API Docs</button><button class="themebtn" onclick="toggleTheme()" title="Switch dark / normal theme">☀ Normal</button><span id="me"></span><button onclick="logout()">Logout</button></header>
 <main>
 <div id="mapPage" style="display:flex;flex:1">
 <div id="side">
@@ -221,6 +252,9 @@ a.lnk{color:#eafffa;text-decoration:none;border-bottom:1px dashed rgba(56,240,20
 <div id="docsPage" class="page"><button class="b" style="width:250px" onclick="location='/docs/download'">Download API spec (for ERP team)</button><div id="docBody"></div></div>
 </main>
 <script>
+function toggleTheme(){const t=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=t;try{localStorage.setItem('ef_theme',t);}catch(e){}themeLabels();}
+function themeLabels(){document.querySelectorAll('.themebtn').forEach(b=>b.textContent=document.documentElement.dataset.theme==='light'?'☾ Dark':'☀ Normal');}
+document.addEventListener('DOMContentLoaded',themeLabels);themeLabels();
 // Small loader: the real app code (/app.js) is only sent by the server after login.
 async function loadApp(){if(window.APP_READY)return;await new Promise((ok,no)=>{const s=document.createElement('script');s.src='/app.js?t='+Date.now();s.onload=ok;s.onerror=no;document.body.appendChild(s);});window.APP_READY=1;}
 async function login(){const g=id=>document.getElementById(id);const r=await fetch('/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:g('lu').value,password:g('lp').value})});

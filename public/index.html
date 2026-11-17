@@ -26,7 +26,8 @@ section{padding:60px 6vw}h2{font-size:30px;color:var(--d);margin:0 0 8px}.sub{co
 .cta{background:linear-gradient(135deg,var(--g),var(--d));color:#fff;text-align:center;border-radius:20px;margin:0 6vw 60px;padding:44px 20px}
 footer{background:var(--d);color:#cfe;padding:26px 6vw;font-size:14px;text-align:center}.small{font-size:12px;color:#777}
 .leaflet-tooltip.cnt{background:none;border:0;box-shadow:none;font:700 13px Arial;color:#1b3d2b}.leaflet-tooltip.cnt::before{display:none}.mapnote{background:#fff;padding:8px 12px;border-radius:8px;max-width:240px;font:13px Arial;box-shadow:0 2px 8px rgba(0,0,0,.15)}
-
+</style>
+<style id="dk">
 /* ===== AI core theme (dark / neon) ===== */
 :root{--g:#38f0c8;--g2:#3ec7ff;--y:#ffc34d;--d:#04080c;--card:rgba(13,24,33,.85);--line:rgba(56,240,200,.18);--ink:#d7f3ec;--muted:#86a1aa}
 body{font-family:Inter,'Segoe UI',Arial,sans-serif;color:var(--ink);background:radial-gradient(900px 500px at 85% -5%,rgba(62,199,255,.12),transparent 60%),linear-gradient(rgba(56,240,200,.035) 1px,transparent 1px) 0 0/34px 34px,linear-gradient(90deg,rgba(56,240,200,.035) 1px,transparent 1px) 0 0/34px 34px,#060b10}
@@ -54,8 +55,11 @@ input,select,textarea{background:rgba(5,12,17,.85);border:1px solid var(--line);
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--g);box-shadow:0 0 0 3px rgba(56,240,200,.15)}
 button{font-family:Inter,sans-serif}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
-</style></head><body>
-<nav><b>Smart <span>Evergreen</span> Assistant</b><div><a class="btn p" href="/app.html">Staff login</a></div></nav>
+
+.themebtn{background:transparent;border:1px solid rgba(56,240,200,.4);color:#38f0c8;border-radius:999px;padding:7px 12px;margin-right:8px;cursor:pointer;font:600 12px 'JetBrains Mono',monospace}</style>
+<style>html[data-theme=light] .themebtn{background:transparent;border:1px solid #2e9e44;color:#1b7a3a;border-radius:999px;padding:7px 12px;margin-right:8px;cursor:pointer;font:600 12px Arial}</style>
+<script>(function(){var t="dark";try{t=localStorage.getItem("ef_theme")||"dark"}catch(e){}document.documentElement.dataset.theme=t;document.getElementById("dk").disabled=t==="light";})();</script></head><body>
+<nav><b>Smart <span>Evergreen</span> Assistant</b><div><button class="themebtn" onclick="toggleTheme()">☀ Normal</button><a class="btn p" href="/app.html">Staff login</a></div></nav>
 <div class="hero"><div class="sun"></div><div class="pulse"><i></i> Live monitoring active · updated <span id="upd">just now</span></div>
 <h1>Your solar system is watched by AI, and cared for by people.</h1>
 <p>Every home and commercial rooftop system we install is checked automatically, day and night. When something is wrong, our engineers already know before you do.</p>
@@ -106,6 +110,8 @@ fetch('/public/stats').then(r=>r.json()).then(s=>{
   L.circleMarker([a.lat,a.lng],{radius:8+Math.min(a.systems,20),color:c,fillColor:c,fillOpacity:.45,weight:2}).bindTooltip(String(a.systems),{permanent:true,direction:'center',className:'cnt'}).bindPopup(`<b>${a.area||'Area'}</b><br>${a.systems} systems · ${a.kw} kW<br>Today: ${a.kwh_per_kw??'–'} kWh per kW`).addTo(map);});
  if(pts.length)map.fitBounds(pts,{padding:[30,30],maxZoom:10});
  else{const m=L.control({position:'topright'});m.onAdd=()=>{const d=L.DomUtil.create('div','mapnote');d.textContent='Area markers appear here as monitored systems are added (shown only where 3+ systems are in one area).';return d;};m.addTo(map);}}).catch(()=>{});
+function toggleTheme(){var t=document.documentElement.dataset.theme==='light'?'dark':'light';document.documentElement.dataset.theme=t;document.getElementById('dk').disabled=t==='light';try{localStorage.setItem('ef_theme',t)}catch(e){}tl();}
+function tl(){document.querySelectorAll('.themebtn').forEach(function(b){b.textContent=document.documentElement.dataset.theme==='light'?'☾ Dark':'☀ Normal';});}tl();
 async function sendEnq(ev){ev.preventDefault();const fm=ev.target,m=document.getElementById('enqMsg'),btn=fm.querySelector('button');btn.disabled=true;m.textContent='Sending…';
  try{const r=await fetch('/public/enquiry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(fm)))});const j=await r.json();
   if(j.ok){fm.innerHTML=`<h3 style="color:#38f0c8">Thank you! 🌞</h3><p>Your request is received. Reference: <b>${j.ref||''}</b>.<br>Our team will call you soon. Urgent? Call <a href="tel:7074833525">7074833525</a>.</p>`;}
