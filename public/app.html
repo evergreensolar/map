@@ -121,6 +121,19 @@ details.fold>summary::before{content:'▸ ';color:var(--neon)}details.fold[open]
 .trow .nm{flex:1 1 180px}.trow a.call{color:var(--neon);text-decoration:none;font-family:var(--mono);font-size:12px}
 a.lnk{color:#eafffa;text-decoration:none;border-bottom:1px dashed rgba(56,240,200,.4)}a.lnk:hover{color:var(--neon)}
 @media print{.drawer{display:none}}
+/* Route planner */
+.rpside{width:380px;overflow:auto;padding:16px 18px 30px;background:rgba(8,15,21,.85);border-right:1px solid var(--line)}
+html[data-theme=light] .rpside{background:#f8fbfa}
+.srch{position:relative}.sres{position:absolute;left:0;right:0;top:100%;z-index:1500;background:var(--card2);border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto;display:none;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+html[data-theme=light] .sres{background:#fff}
+.sres div{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line2);font-size:12.5px}.sres div:hover{background:rgba(56,240,200,.08)}.sres i{font-style:normal;font:600 10px var(--mono);color:var(--cyan);margin-right:6px;text-transform:uppercase}
+.rstop{display:flex;gap:8px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px}
+.rstop .no{flex:0 0 26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#1de9b6,#22b8f0);color:#03140f;font:700 12px var(--mono);display:flex;align-items:center;justify-content:center}
+.rstop .tx{flex:1;min-width:0}.rstop .tx b{font-size:13px}.rstop .bt{display:flex;flex-direction:column;gap:2px}.rstop .bt button{padding:1px 7px;margin:0}
+.rpgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 8px}
+.rnum{background:none;border:0}.rnum b{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#1de9b6,#22b8f0);color:#03140f!important;font:700 12px var(--mono);box-shadow:0 0 0 2px #fff,0 0 12px rgba(56,240,200,.7)}
+.rnum.st b{background:#ffc34d}
+@media (max-width:760px){#routePage{flex-direction:column}.rpside{width:100%;max-height:none;border-right:0;border-bottom:1px solid var(--line)}#rmap{min-height:60vh}}
 /* AI core gauges */
 .core{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0 6px}
 .gauge{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px 12px;display:flex;align-items:center;gap:12px;box-shadow:var(--glow);overflow:hidden}
@@ -184,7 +197,7 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')login()">
 <button class="b" onclick="login()">Login</button><p id="lerr" style="color:red"></p></div></div>
 <header><b class="brand"><a href="/"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#38f0c8" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#3ec7ff"/></svg><span>Smart Evergreen</span></a><small>AI · Field Ops</small></b>
-<button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="todayPage" onclick="show(this)">◉ Today</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
+<button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="todayPage" onclick="show(this)">◉ Today</button><button data-p="routePage" onclick="show(this)">➜ Route planner</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
 <button data-p="importPage" onclick="show(this)" class="adm">Import</button><button data-p="usersPage" onclick="show(this)" class="adm">Users</button>
 <button data-p="docsPage" onclick="show(this)">API Docs</button><button class="themebtn" onclick="toggleTheme()" title="Switch dark / normal theme">☀ Normal</button><span id="me"></span><button onclick="logout()">Logout</button></header>
 <main>
@@ -233,6 +246,24 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <div><label>Inverter serial *</label><input id="rSn"></div><div><label>Data logger serial</label><input id="rLog"></div><div><label>System kW</label><input id="rKw" type="number" style="width:80px"></div>
 <div><button class="b" onclick="rAdd()">Link</button></div></div></details>
 <details id="connWrap" class="fold"><summary>Inverter company connections (keys)</summary><div id="connBox"></div></details></div>
+<div id="routePage" style="display:none;flex:1;min-height:0">
+<div id="rpSide" class="rpside">
+<h4 style="margin-top:2px">1 · Start point (home / office / warehouse)</h4>
+<div class="srch"><input id="rpStartQ" placeholder="Search village, town, pincode, address…" oninput="rpFind('start')"><div id="rpStartRes" class="sres"></div></div>
+<div id="rpStartBox" class="small"></div>
+<div style="display:flex;gap:6px;margin-top:6px"><button class="mini" onclick="rpStartOffice()">Use office</button><button class="mini" onclick="rpPickMode('start')">Pick on map</button></div>
+<h4>2 · Add sites in visit order</h4>
+<div class="srch"><input id="rpQ" placeholder="Customer, phone, project ID, pincode — or any address" oninput="rpFind('stop')"><div id="rpRes" class="sres"></div></div>
+<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"><button class="mini" onclick="rpPickMode('stop')">+ Pick on map</button><button class="mini" onclick="rpOptimize()">⚡ Shortest order</button><label style="margin:0;display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="rpBack" style="width:auto;margin:0" onchange="rpDraw()"> Return to start</label></div>
+<div id="rpList"></div><div id="rpSum" class="small" style="margin-top:8px"></div>
+<h4>3 · Send to engineer / driver</h4>
+<div class="rpgrid"><div><label>Name</label><input id="rpPerson" placeholder="Engineer / driver"></div><div><label>WhatsApp number</label><input id="rpPhone" placeholder="10-digit mobile"></div>
+<div><label>Date</label><input id="rpDate" type="date"></div><div><label>Purpose</label><select id="rpPurpose"><option>Site survey</option><option>Installation</option><option>Material delivery</option><option>Service / maintenance</option><option>Cleaning</option><option>Other</option></select></div></div>
+<button class="b" onclick="rpWhatsApp()">Send route on WhatsApp</button>
+<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="b g" style="flex:1;margin:0" onclick="rpOpenMaps()">Open in Google Maps</button><button class="b g" style="flex:1;margin:0" onclick="rpCopy()">Copy message</button></div>
+<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="b g" style="flex:1;margin:0" onclick="rpSave()">Save route</button><button class="b g" style="flex:1;margin:0" onclick="rpClear()">New route</button></div>
+<h4>Saved routes</h4><div id="rpSaved" class="small"></div>
+</div><div id="rmap" style="flex:1"></div></div>
 <div id="todayPage" class="page"><h3>Today's action board</h3><p class="small">Everything that needs a person today – grouped by area so one engineer can cover nearby sites in one trip.</p>
 <div class="toolbar"><button class="b" onclick="waShare()">Share summary on WhatsApp</button><button class="b g" onclick="todayPage()">↻ Refresh</button><button class="b g" onclick="window.print()">Print</button></div><div id="tBody"></div></div>
 <div id="drawer" class="drawer"><div class="dhead"><div id="dTitle"></div><button class="mini" onclick="closeDev()">✕ Close</button></div><div id="dBody"></div></div>

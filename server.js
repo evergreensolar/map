@@ -28,7 +28,8 @@ const SCHEMA=[
 `CREATE TABLE IF NOT EXISTS alerts(id INT AUTO_INCREMENT PRIMARY KEY,serial VARCHAR(80),project_ext_id VARCHAR(80),type VARCHAR(20),message VARCHAR(600),status VARCHAR(10) DEFAULT 'OPEN',opened_at VARCHAR(30),resolved_at VARCHAR(30),resolved_by VARCHAR(120),engineer VARCHAR(120),last_answer VARCHAR(400),last_answer_by VARCHAR(120),last_answer_at VARCHAR(30),next_ask_at VARCHAR(30),rnd INT DEFAULT 0,INDEX(status),INDEX(serial))`,
 `CREATE TABLE IF NOT EXISTS alert_log(id INT AUTO_INCREMENT PRIMARY KEY,alert_id INT,at VARCHAR(30),who VARCHAR(120),question VARCHAR(500),answer VARCHAR(400),note VARCHAR(500),INDEX(alert_id))`,
 `CREATE TABLE IF NOT EXISTS web_enquiries(id INT AUTO_INCREMENT PRIMARY KEY,ref VARCHAR(30) UNIQUE,name VARCHAR(120),phone VARCHAR(15),email VARCHAR(120),pincode VARCHAR(10),segment VARCHAR(20),monthly_bill VARCHAR(30),message VARCHAR(600),page VARCHAR(200),ip VARCHAR(60),created_at VARCHAR(30),erp_status VARCHAR(20) DEFAULT 'PENDING',erp_response VARCHAR(300),INDEX(created_at))`,
-`CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`];
+`CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`,
+`CREATE TABLE IF NOT EXISTS routes(id INT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(200),route_date VARCHAR(10),person VARCHAR(120),phone VARCHAR(20),purpose VARCHAR(40),data MEDIUMTEXT,created_by VARCHAR(120),created_at VARCHAR(30),INDEX(route_date))`];
 async function initDB(){for(const s of SCHEMA)await q(s);
  for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)','offline_since VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
 // ---- Stage normalisation (Evergreen workflow) ----
@@ -174,6 +175,35 @@ app.post('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const ok=new Set
 app.post('/api/rms/test/:brand',auth(['admin']),W(async(req,res)=>{const c=RMS.connectors[req.params.brand];if(!c)return res.status(404).json({error:'unknown'});
  try{if(!RMS.configured(req.params.brand))throw new Error('credentials not set');let msg='Connected';if(c.testInfo)msg=await c.testInfo();else if(c.token)await c.token();res.json({ok:true,message:msg});}catch(e){res.json({ok:false,message:e.message});}}));
 app.get('/api/rms/brands',auth(),(req,res)=>res.json(RMS.BRANDS.map(b=>({brand:b,configured:RMS.configured(b)}))));
+// ---- Route planner: search sites, search places, road distance, saved routes ----
+app.get('/api/route/search',auth(),W(async(req,res)=>{const t=String(req.query.q||'').trim();if(t.length<2)return res.json([]);const s='%'+t+'%';
+ const pick=(kind,sql,args)=>q(sql,args).then(r=>r.map(x=>({kind,...x})));
+ const r=(await Promise.all([
+  pick('Project','SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,stage_label info FROM projects WHERE customer LIKE ? OR ext_id LIKE ? OR phone LIKE ? OR pincode LIKE ? OR area LIKE ? LIMIT 10',[s,s,s,s,s]),
+  pick('Enquiry','SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status info FROM enquiries WHERE customer LIKE ? OR ext_id LIKE ? OR phone LIKE ? OR pincode LIKE ? OR area LIKE ? LIMIT 10',[s,s,s,s,s]),
+  pick('Service','SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,type info FROM service WHERE customer LIKE ? OR ext_id LIKE ? OR phone LIKE ? OR pincode LIKE ? OR area LIKE ? LIMIT 10',[s,s,s,s,s]),
+  pick('Inverter site','SELECT d.serial ref,COALESCE(p.customer,d.plant_name) name,p.phone,p.address,COALESCE(p.area,d.city) area,p.pincode,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,d.brand info FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id WHERE d.plant_name LIKE ? OR p.customer LIKE ? OR d.serial LIKE ? OR d.city LIKE ? OR p.phone LIKE ? LIMIT 10',[s,s,s,s,s])])).flat();
+ res.json(r.slice(0,30));}));
+// Any place / address / village / pincode (OpenStreetMap Nominatim via our server; max 1 request per second)
+let geoLast=0;const geoCache={};
+app.get('/api/geo',auth(),W(async(req,res)=>{const t=String(req.query.q||'').trim().slice(0,120);if(t.length<3)return res.json([]);if(geoCache[t])return res.json(geoCache[t]);
+ const w=geoLast+1100-Date.now();if(w>0)await new Promise(r=>setTimeout(r,w));geoLast=Date.now();
+ const qs=/^\d{6}$/.test(t)?`postalcode=${t}&country=India`:`q=${encodeURIComponent(t)}&countrycodes=in`;
+ let j=[];try{j=await (await fetch(`https://nominatim.openstreetmap.org/search?${qs}&format=json&limit=6`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'},signal:AbortSignal.timeout(12000)})).json();}catch(e){return res.json([]);}
+ res.json(geoCache[t]=(j||[]).map(x=>({name:x.display_name,lat:+x.lat,lng:+x.lon})));}));
+// Road distance / time / shape (free OSRM; falls back to straight lines in the browser if it fails)
+app.post('/api/route/road',auth(),W(async(req,res)=>{const pts=(req.body.points||[]).filter(p=>isFinite(p.lat)&&isFinite(p.lng)).slice(0,60);if(pts.length<2)return res.json({ok:false});
+ try{const c=pts.map(p=>`${(+p.lng).toFixed(5)},${(+p.lat).toFixed(5)}`).join(';');
+  const j=await (await fetch(`https://router.project-osrm.org/route/v1/driving/${c}?overview=simplified&geometries=geojson&steps=false`,{headers:{'User-Agent':'EvergreenSolar-FieldMap/1.0'},signal:AbortSignal.timeout(12000)})).json();
+  const r=j.routes&&j.routes[0];if(!r)return res.json({ok:false});res.json({ok:true,km:r.distance/1000,min:r.duration/60,legs:(r.legs||[]).map(l=>({km:l.distance/1000,min:l.duration/60})),line:r.geometry.coordinates.map(([x,y])=>[y,x])});}
+ catch(e){res.json({ok:false,error:e.message});}}));
+app.get('/api/routes',auth(),W(async(req,res)=>res.json(await q('SELECT id,name,route_date,person,phone,purpose,created_by,created_at FROM routes ORDER BY id DESC LIMIT 60'))));
+app.get('/api/routes/:id',auth(),W(async(req,res)=>{const r=await one('SELECT * FROM routes WHERE id=?',[req.params.id]);if(!r)return res.status(404).json({error:'not found'});r.data=JSON.parse(r.data||'{}');res.json(r);}));
+app.post('/api/routes',auth(['admin','manager','sales']),W(async(req,res)=>{const b=req.body||{},u=req.session.user.name||req.session.user.username;
+ const row={name:String(b.name||'Route').slice(0,200),route_date:String(b.route_date||'').slice(0,10)||null,person:String(b.person||'').slice(0,120)||null,phone:String(b.phone||'').replace(/\D/g,'').slice(-10)||null,purpose:String(b.purpose||'').slice(0,40)||null,data:JSON.stringify({start:b.start,stops:(b.stops||[]).slice(0,60),back:!!b.back})};
+ if(b.id){await q('UPDATE routes SET ? WHERE id=?',[row,b.id]);return res.json({ok:true,id:+b.id});}
+ const r=await q('INSERT INTO routes SET ?',[{...row,created_by:u,created_at:now()}]);res.json({ok:true,id:r.insertId});}));
+app.delete('/api/routes/:id',auth(['admin','manager']),W(async(req,res)=>{await q('DELETE FROM routes WHERE id=?',[req.params.id]);res.json({ok:true});}));
 // One inverter: details + last 30 days + alert history (for the detail panel)
 app.get('/api/rms/devices/:id/history',auth(),W(async(req,res)=>{const d=await one('SELECT d.*,COALESCE(p.customer,d.plant_name) customer,p.phone,p.pincode,p.address,COALESCE(p.area,d.city) area,COALESCE(d.capacity_kw,p.capacity_kw) kw FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id WHERE d.id=?',[req.params.id]);
  if(!d)return res.status(404).json({error:'not found'});const from=new Date(Date.now()-30*864e5).toISOString().slice(0,10);

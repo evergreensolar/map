@@ -88,3 +88,10 @@ Wait 10 seconds and open the site again, then login.
 - Website enquiry form: HTML characters are stripped (stops script injection into the staff app).
 - Server code (server.js, rms.js), database and inverter keys are never sent to browsers.
 - Honest limit: anything a browser receives (HTML/CSS of the public page, the staff UI after login) can still be seen by a logged-in user or copied by a determined person. Protect logins: strong passwords, remove users who leave.
+
+## Route planner (➜ Route planner tab)
+- Start point: office, any searched place (village / town / pincode via OpenStreetMap) or a click on the map.
+- Sites: search projects, enquiries, service tickets and inverter sites (name, phone, ID, pincode) or any address; reorder with ▲▼ or "Shortest order".
+- Road distance and time come from the free OSRM service (router.project-osrm.org); if it is down, a straight-line estimate is shown.
+- "Send route on WhatsApp" opens WhatsApp with numbered stops, phone, address, a map link per stop and the full Google Maps route (long routes are split into parts of 10 stops – a Google Maps limit).
+- Routes can be saved and reopened; the Today board has "➜ Plan route" per area.

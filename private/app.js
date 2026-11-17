@@ -20,8 +20,8 @@ async function init(){try{ME=await api('/auth/me');}catch(e){return;}$('login').
  const tb=t&&document.querySelector(`header button[data-p="${t}"]`);if(tb&&tb.style.display!=='none'&&t!=='mapPage')show(tb);bgStatus();}
 function show(b){document.querySelectorAll('header button[data-p]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
  try{history.replaceState(null,'','#'+b.dataset.p);localStorage.setItem('ef_tab',b.dataset.p);}catch(e){}LAST_REFRESH=Date.now();
- ['mapPage','todayPage','genPage','planPage','areaPage','rmsPage','alertPage','importPage','usersPage','docsPage'].forEach(p=>$(p).style.display='none');$(b.dataset.p).style.display=['mapPage','genPage'].includes(b.dataset.p)?'flex':'block';
- if(b.dataset.p=='mapPage')map.invalidateSize();if(b.dataset.p=='areaPage')areas();if(b.dataset.p=='planPage')planner();if(b.dataset.p=='rmsPage')rmsPage();if(b.dataset.p=='genPage')genPage();if(b.dataset.p=='alertPage')alertsPage();if(b.dataset.p=='usersPage')users();if(b.dataset.p=='docsPage')docs();if(b.dataset.p=='todayPage')todayPage();}
+ ['mapPage','todayPage','routePage','genPage','planPage','areaPage','rmsPage','alertPage','importPage','usersPage','docsPage'].forEach(p=>$(p).style.display='none');$(b.dataset.p).style.display=['mapPage','genPage','routePage'].includes(b.dataset.p)?'flex':'block';
+ if(b.dataset.p=='mapPage')map.invalidateSize();if(b.dataset.p=='areaPage')areas();if(b.dataset.p=='planPage')planner();if(b.dataset.p=='rmsPage')rmsPage();if(b.dataset.p=='genPage')genPage();if(b.dataset.p=='alertPage')alertsPage();if(b.dataset.p=='usersPage')users();if(b.dataset.p=='docsPage')docs();if(b.dataset.p=='todayPage')todayPage();if(b.dataset.p=='routePage')routePage();}
 const fmt=d=>d?d.split('-').reverse().join('/'):'-';
 async function load(keepView){const st=[...$('fStage').selectedOptions].map(o=>o.value).join(',');const q=new URLSearchParams({stage:st,from:$('fFrom').value,to:$('fTo').value,team:$('fTeam').value,engineer:$('fEng').value,datefield:$('fDateField').value});
  projLayer.clearLayers();enqLayer.clearLayers();projects=[];const cnt={};
@@ -218,7 +218,7 @@ async function todayPage(){const [devs,als]=await Promise.all([api('/api/rms/dev
  TODAY={on,n:devs.length,live,tk,off,due,clean,fault,grid,nodata,byArea};
  const row=x=>`<div class="trow"><div class="nm"><a href="#" class="lnk" onclick="dev(${x.id});return false">${x.customer||x.serial}</a><div class="sub">${x.brand} · ${x.serial}${x.offline_since?' · offline since '+new Date(x.offline_since).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):''}</div></div>${x.phone?`<a class="call" href="tel:${x.phone}">📞 ${x.phone}</a>`:''}</div>`;
  const devOf=a=>devs.find(d=>d.serial===a.serial)||{id:0,serial:a.serial,customer:a.customer,brand:a.brand,area:a.area,phone:a.phone};
- const sec=(title,list,empty)=>`<div class="tsec"><h4>${title} (${list.length})</h4>${list.length?byArea(list).map(([ar,l])=>`<div class="tgrp"><div class="ar">${ar} · ${l.length}</div>${l.map(row).join('')}</div>`).join(''):`<p class="small">${empty}</p>`}</div>`;
+ const sec=(title,list,empty)=>`<div class="tsec"><h4>${title} (${list.length})</h4>${list.length?byArea(list).map(([ar,l])=>`<div class="tgrp"><div class="ar">${ar} · ${l.length} <button class="mini" style="float:right" onclick='routeFrom(${JSON.stringify(l.map(x=>x.serial))})'>➜ Plan route</button></div>${l.map(row).join('')}</div>`).join(''):`<p class="small">${empty}</p>`}</div>`;
  $('tBody').innerHTML=`<div class="core">${[[`${on}/${devs.length}`,'Online now'],[`${live.toFixed(1)} kW`,'Live power'],[`${Math.round(tk)} kWh`,'Generated today'],[String(off.length),'Offline'],[String(due.length),'Questions due']].map(([v,l])=>`<div class="gauge"><div><div class="gv">${v}</div><div class="gl">${l}</div></div></div>`).join('')}</div>
  ${sec('⚠ Inverter faults – engineer needed',fault.map(devOf),'No inverter faults.')}
  ${sec('● Offline now',off,'Nothing offline right now.')}
@@ -239,3 +239,74 @@ function waShare(){if(!TODAY)return;const t=TODAY,dt=new Date().toLocaleString('
  if(t.grid.length)m+=`\n\n*Grid fault – wait (${t.grid.length})*\n`+names(t.grid.map(devOf));
  if(t.due.length)m+=`\n\nFollow-up questions due: ${t.due.length}`;
  window.open('https://wa.me/?text='+encodeURIComponent(m.slice(0,3500)),'_blank','noopener');}
+
+// ---------- Route planner ----------
+let RMAP,RLAY,RP={start:null,stops:[],id:null},RPICK=null,RROAD=null,rpT;
+const OFFICE=()=>{const o=String(ME?.office||'22.6470,88.4400').split(',').map(Number);return{name:'Evergreen Solar office',lat:o[0],lng:o[1]};};
+async function routePage(){if(!RMAP){RMAP=L.map('rmap').setView([22.65,88.45],10);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'}).addTo(RMAP);RLAY=L.layerGroup().addTo(RMAP);
+  RMAP.on('click',async e=>{if(!RPICK)return;const p={name:'Pinned location',lat:+e.latlng.lat.toFixed(6),lng:+e.latlng.lng.toFixed(6)};if(RPICK==='start')RP.start=p;else RP.stops.push(p);RPICK=null;$('rmap').style.cursor='';rpDraw();});
+  if(!$('rpDate').value)$('rpDate').value=new Date(Date.now()+864e5).toISOString().slice(0,10);}
+ setTimeout(()=>RMAP.invalidateSize(),60);if(!RP.start)RP.start=OFFICE();rpDraw();rpSaved();}
+function rpPickMode(m){RPICK=m;$('rmap').style.cursor='crosshair';alert(m==='start'?'Click on the map where the engineer starts (home / office).':'Click on the map to add a site.');}
+function rpStartOffice(){RP.start=OFFICE();rpDraw();}
+function rpFind(which){clearTimeout(rpT);const inp=$(which==='start'?'rpStartQ':'rpQ'),box=$(which==='start'?'rpStartRes':'rpRes'),t=inp.value.trim();if(t.length<2){box.style.display='none';return;}
+ rpT=setTimeout(async()=>{const [sites,places]=await Promise.all([which==='stop'?api('/api/route/search?q='+encodeURIComponent(t)):Promise.resolve([]),t.length>=3?api('/api/geo?q='+encodeURIComponent(t)).catch(()=>[]):Promise.resolve([])]);
+  window._rpRes=[...sites.map(x=>({...x,src:'site'})),...places.map(x=>({kind:'Place',name:x.name.split(',').slice(0,3).join(','),address:x.name,lat:x.lat,lng:x.lng,src:'place'}))];
+  box.innerHTML=window._rpRes.map((x,i)=>`<div onclick="rpPick('${which}',${i})"><i>${x.kind}</i><b>${x.name||x.ref||''}</b>${x.phone?' · '+x.phone:''}<div class="sub">${[x.ref&&x.src==='site'?x.ref:'',x.area,x.pincode,x.info].filter(Boolean).join(' · ')}${x.lat==null?' · <span style="color:var(--amber)">no location yet</span>':''}</div></div>`).join('')||'<div class="sub">Nothing found</div>';box.style.display='block';},350);}
+async function rpPick(which,i){const x=window._rpRes[i];$(which==='start'?'rpStartRes':'rpRes').style.display='none';$(which==='start'?'rpStartQ':'rpQ').value='';
+ let p={name:x.name||x.ref,phone:x.phone||'',address:x.src==='place'?x.address:[x.address,x.area,x.pincode].filter(Boolean).join(', '),ref:x.src==='site'?x.ref:'',kind:x.kind,lat:x.lat,lng:x.lng};
+ if(p.lat==null&&(x.pincode||x.area)){const g=await api('/api/geo?q='+encodeURIComponent(x.pincode||x.area)).catch(()=>[]);if(g[0]){p.lat=g[0].lat;p.lng=g[0].lng;p.approx=true;}}
+ if(p.lat==null)return alert('This site has no location yet. Add it with "Pick on map" instead.');
+ if(which==='start')RP.start=p;else RP.stops.push(p);rpDraw();}
+function rpMove(i,d){const j=i+d;if(j<0||j>=RP.stops.length)return;[RP.stops[i],RP.stops[j]]=[RP.stops[j],RP.stops[i]];rpDraw();}
+function rpDel(i){RP.stops.splice(i,1);rpDraw();}
+function rpOptimize(){if(RP.stops.length<3&&!RP.start)return;const s=RP.start,l=[...RP.stops],back=$('rpBack').checked,D=(a,b)=>dist(a.lat,a.lng,b.lat,b.lng);
+ let cur=s,ord=[];while(l.length){let bi=0;l.forEach((x,i)=>{if(D(cur,x)<D(cur,l[bi]))bi=i;});cur=l.splice(bi,1)[0];ord.push(cur);}
+ const len=o=>{let t=D(s,o[0]);for(let i=1;i<o.length;i++)t+=D(o[i-1],o[i]);return t+(back?D(o[o.length-1],s):0);};
+ let imp=true;while(imp){imp=false;for(let i=0;i<ord.length-1;i++)for(let k=i+1;k<ord.length;k++){const n=[...ord.slice(0,i),...ord.slice(i,k+1).reverse(),...ord.slice(k+1)];if(len(n)<len(ord)-1e-6){ord=n;imp=true;}}}
+ RP.stops=ord;rpDraw();}
+function dist(a,b,c,d){const t=Math.PI/180,x=Math.sin((c-a)*t/2)**2+Math.cos(a*t)*Math.cos(c*t)*Math.sin((d-b)*t/2)**2;return 12742*Math.asin(Math.sqrt(x));}
+function rpPts(){const p=[RP.start,...RP.stops].filter(Boolean);if($('rpBack').checked&&RP.start&&RP.stops.length)p.push(RP.start);return p;}
+async function rpDraw(){const s=RP.start;$('rpStartBox').innerHTML=s?`<div class="rstop"><div class="no" style="background:#ffc34d">S</div><div class="tx"><b>${s.name}</b><div class="sub">${s.address||(s.lat.toFixed(4)+', '+s.lng.toFixed(4))}</div></div></div>`:'';
+ $('rpList').innerHTML=RP.stops.map((x,i)=>`<div class="rstop"><div class="no">${i+1}</div><div class="tx"><b>${x.name}</b>${x.kind?` <span class="tag">${x.kind}</span>`:''}<div class="sub">${[x.phone,x.address].filter(Boolean).join(' · ')}${x.approx?' · <span style="color:var(--amber)">approx. (pincode)</span>':''}</div><div class="sub" id="leg${i}"></div></div>
+  <div class="bt"><button class="mini" onclick="rpMove(${i},-1)">▲</button><button class="mini" onclick="rpMove(${i},1)">▼</button><button class="mini del" onclick="rpDel(${i})">✕</button></div></div>`).join('')||'<p class="small">No sites yet – search above or pick on the map.</p>';
+ if(!RMAP)return;RLAY.clearLayers();const pts=rpPts();
+ if(s)L.marker([s.lat,s.lng],{icon:L.divIcon({className:'rnum st',html:'<b>S</b>',iconSize:[26,26]})}).bindPopup('<b>Start</b><br>'+s.name).addTo(RLAY);
+ RP.stops.forEach((x,i)=>L.marker([x.lat,x.lng],{icon:L.divIcon({className:'rnum',html:`<b>${i+1}</b>`,iconSize:[26,26]})}).bindPopup(`<b>${i+1}. ${x.name}</b><br>${x.phone||''}<br>${x.address||''}`).addTo(RLAY));
+ if(pts.length>1){const line=L.polyline(pts.map(p=>[p.lat,p.lng]),{color:'#38f0c8',weight:3,dashArray:'6 6',opacity:.8}).addTo(RLAY);RMAP.fitBounds(line.getBounds().pad(.15));}
+ else if(s)RMAP.setView([s.lat,s.lng],11);
+ // straight-line estimate first, then real road distance if available
+ let km=0;for(let i=1;i<pts.length;i++)km+=dist(pts[i-1].lat,pts[i-1].lng,pts[i].lat,pts[i].lng)*1.3;
+ $('rpSum').innerHTML=pts.length>1?`≈ ${km.toFixed(0)} km · ≈ ${fmtMin(km/28*60)} driving (estimate)`:'';RROAD=null;
+ if(pts.length>1){const key=JSON.stringify(pts.map(p=>[p.lat,p.lng]));const r=await api('/api/route/road',{method:'POST',body:JSON.stringify({points:pts})}).catch(()=>({}));
+  if(r.ok&&key===JSON.stringify(rpPts().map(p=>[p.lat,p.lng]))){RROAD=r;L.polyline(r.line,{color:'#3ec7ff',weight:5,opacity:.85}).addTo(RLAY);
+   $('rpSum').innerHTML=`Road distance <b>${r.km.toFixed(1)} km</b> · driving <b>${fmtMin(r.min)}</b> · ${RP.stops.length} stops`;
+   r.legs.forEach((l,i)=>{const e=$('leg'+i);if(e)e.textContent=`↳ ${l.km.toFixed(1)} km · ${fmtMin(l.min)} from previous`;});}}}
+const fmtMin=m=>m<60?Math.round(m)+' min':Math.floor(m/60)+' h '+Math.round(m%60)+' min';
+// Google Maps allows ~9 waypoints per link → long routes are split into parts
+function rpLinks(){const pts=rpPts();if(pts.length<2)return[];const ll=p=>`${(+p.lat).toFixed(6)},${(+p.lng).toFixed(6)}`,out=[];
+ for(let i=0;i<pts.length-1;i+=10){const seg=pts.slice(i,i+11);const o=seg[0],d=seg[seg.length-1],w=seg.slice(1,-1);
+  out.push(`https://www.google.com/maps/dir/?api=1&origin=${ll(o)}&destination=${ll(d)}${w.length?'&waypoints='+encodeURIComponent(w.map(ll).join('|')):''}&travelmode=driving`);}
+ return out;}
+function rpMsg(){const s=RP.start,links=rpLinks(),d=$('rpDate').value?new Date($('rpDate').value).toLocaleDateString('en-IN',{weekday:'short',day:'2-digit',month:'short'}):'';
+ let m=`*${$('rpPurpose').value} route${d?' – '+d:''}*${$('rpPerson').value?'\n'+$('rpPerson').value:''}\n\n*Start:* ${s?s.name:''}`;
+ RP.stops.forEach((x,i)=>{m+=`\n\n*${i+1}. ${x.name}*`+(x.phone?`\n📞 ${x.phone}`:'')+(x.address?`\n📍 ${x.address}`:'')+(x.ref?`\nRef: ${x.ref}`:'')+`\nMap: https://maps.google.com/?q=${(+x.lat).toFixed(6)},${(+x.lng).toFixed(6)}`;});
+ if($('rpBack').checked)m+=`\n\n*Return to start*`;
+ if(RROAD)m+=`\n\nTotal ≈ ${RROAD.km.toFixed(0)} km · ${fmtMin(RROAD.min)} driving`;
+ m+=`\n\n*Full route (tap to navigate):*\n`+links.map((l,i)=>(links.length>1?`Part ${i+1}: `:'')+l).join('\n');
+ return m+`\n\n– Evergreen Solar · 7074833525`;}
+function rpCheck(){if(!RP.start||!RP.stops.length){alert('Add a start point and at least one site.');return false;}return true;}
+function rpWhatsApp(){if(!rpCheck())return;const ph=$('rpPhone').value.replace(/\D/g,'').slice(-10);window.open(`https://wa.me/${ph?'91'+ph:''}?text=${encodeURIComponent(rpMsg())}`,'_blank','noopener');}
+function rpOpenMaps(){if(!rpCheck())return;rpLinks().forEach(l=>window.open(l,'_blank','noopener'));}
+async function rpCopy(){if(!rpCheck())return;try{await navigator.clipboard.writeText(rpMsg());alert('Message copied – paste it anywhere.');}catch(e){prompt('Copy this message:',rpMsg());}}
+async function rpSave(){if(!rpCheck())return;const name=prompt('Route name',`${$('rpPurpose').value} – ${$('rpPerson').value||'engineer'} – ${$('rpDate').value}`);if(!name)return;
+ const r=await api('/api/routes',{method:'POST',body:JSON.stringify({id:RP.id,name,route_date:$('rpDate').value,person:$('rpPerson').value,phone:$('rpPhone').value,purpose:$('rpPurpose').value,start:RP.start,stops:RP.stops,back:$('rpBack').checked})});
+ if(r.error)return alert(r.error);RP.id=r.id;rpSaved();}
+async function rpSaved(){const l=await api('/api/routes').catch(()=>[]);$('rpSaved').innerHTML=l.map(r=>`<div class="trow"><div class="nm"><a href="#" class="lnk" onclick="rpLoad(${r.id});return false">${r.name}</a><div class="sub">${r.route_date||''} · ${r.person||''} · by ${r.created_by||''}</div></div>${['admin','manager'].includes(ME.role)?`<button class="mini del" onclick="rpDelSaved(${r.id})">✕</button>`:''}</div>`).join('')||'No saved routes yet.';}
+async function rpLoad(id){const r=await api('/api/routes/'+id);RP={start:r.data.start,stops:r.data.stops||[],id:r.id};$('rpBack').checked=!!r.data.back;$('rpPerson').value=r.person||'';$('rpPhone').value=r.phone||'';$('rpDate').value=r.route_date||'';if(r.purpose)$('rpPurpose').value=r.purpose;rpDraw();}
+async function rpDelSaved(id){if(!confirm('Delete this saved route?'))return;await api('/api/routes/'+id,{method:'DELETE'});if(RP.id===id)RP.id=null;rpSaved();}
+function rpClear(){RP={start:OFFICE(),stops:[],id:null};$('rpPerson').value='';$('rpPhone').value='';rpDraw();}
+// From Today board: plan a route for one area
+function routeFrom(serials){const add=RDATA.filter(d=>serials.includes(d.serial)&&d.lat!=null).map(d=>({name:d.customer||d.serial,phone:d.phone||'',address:[d.area,d.pincode].filter(Boolean).join(', '),ref:d.serial,kind:'Inverter site',lat:+d.lat,lng:+d.lng}));
+ if(!add.length)return alert('These sites have no location yet.');RP.stops=add;RP.id=null;$('rpPurpose').value='Service / maintenance';show(document.querySelector('header button[data-p=routePage]'));setTimeout(rpOptimize,300);}
+document.addEventListener('click',e=>{if(!e.target.closest('.srch'))document.querySelectorAll('.sres').forEach(b=>b.style.display='none');});
