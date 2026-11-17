@@ -6,24 +6,89 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;height:100vh;display:flex;flex-direction:column}
-header{background:#1b7a3a;color:#fff;padding:8px 14px;display:flex;gap:10px;align-items:center}
-header b{flex:1}header button{background:#fff;color:#1b7a3a;border:0;padding:6px 10px;border-radius:4px;cursor:pointer}
-header button.on{background:#ffd54f}
-main{flex:1;display:flex;min-height:0}#side{width:330px;overflow:auto;padding:10px;background:#f4f7f4;border-right:1px solid #ccc}
-#map{flex:1}.page{flex:1;overflow:auto;padding:16px;display:none}
-label{display:block;font-size:12px;margin-top:6px}select,input,button.b{width:100%;padding:6px;margin-top:2px}
-button.b{background:#1b7a3a;color:#fff;border:0;border-radius:4px;margin-top:8px;cursor:pointer}button.g{background:#555}
-h4{margin:12px 0 4px}.leg{font-size:13px;display:flex;align-items:center;gap:6px;margin:2px 0}.dot{width:12px;height:12px;border-radius:50%;border:1px solid #333}
-table{border-collapse:collapse;width:100%;font-size:13px}td,th{border:1px solid #ccc;padding:4px 6px}th{background:#e8f3eb}
-#login{position:fixed;inset:0;background:#1b7a3a;display:flex;align-items:center;justify-content:center;z-index:9999}
-#login div{background:#fff;padding:24px;border-radius:8px;width:300px}.small{font-size:12px;color:#555}#list{font-size:12px;background:#fff;padding:6px;max-height:220px;overflow:auto}
+:root{--paper:#f5f1e8;--card:#fffdf8;--ink:#26322b;--muted:#6f776f;--forest:#1f4a36;--forest2:#2c5d45;--moss:#5d8a6b;--gold:#b08a3e;--sun:#e7b94b;--line:#e4dccb;--line2:#efe9dc;--red:#b3412e;
+ --serif:'Cormorant Garamond',Georgia,'Times New Roman',serif;--sans:Inter,'Segoe UI',Arial,sans-serif;--sh:0 1px 2px rgba(38,50,43,.05),0 6px 20px rgba(38,50,43,.06)}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);font-size:14px;color:var(--ink);background:var(--paper);height:100vh;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+a{color:var(--forest2)}
+/* Header */
+header{background:linear-gradient(180deg,#22513b,#1b4231);color:#f3efe4;padding:0 18px;display:flex;gap:2px;align-items:center;min-height:58px;overflow-x:auto;scrollbar-width:none;box-shadow:0 1px 0 rgba(0,0,0,.15)}
+header::-webkit-scrollbar{display:none}
+header .brand{display:flex;align-items:center;gap:10px;margin-right:12px;flex:0 0 auto;font-weight:normal}
+header .brand a{display:flex;align-items:center;gap:10px;color:#fbf7ec;text-decoration:none;font-family:var(--serif);font-size:23px;font-weight:600;letter-spacing:.3px;white-space:nowrap}
+header .brand small{font-size:11px;letter-spacing:2.2px;text-transform:uppercase;color:#cfc3a3;border-left:1px solid rgba(255,255,255,.2);padding-left:10px;white-space:nowrap}
+header button{background:transparent;color:#e2dccb;border:0;padding:19px 8px 17px;border-bottom:2px solid transparent;cursor:pointer;font:500 13px var(--sans);white-space:nowrap;transition:color .2s,border-color .2s}
+header button:hover{color:#fff}
+header button.on{color:#fff;border-bottom-color:var(--sun);background:transparent}
+header #me{margin-left:auto;font-size:12px;color:#cfc3a3;white-space:nowrap;padding:0 8px}
+#bgSt{white-space:nowrap;color:#cfe3d4}
+/* Layout */
+main{flex:1;display:flex;min-height:0}
+#side,#genPage>div:first-child{width:330px;overflow:auto;padding:18px 18px 28px!important;background:var(--paper)!important;border-right:1px solid var(--line)!important}
+#map,#gmap{flex:1}
+.page{flex:1;overflow:auto;padding:28px 34px 48px;display:none;background:var(--paper)}
+.page h3{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--forest);margin:0 0 6px;letter-spacing:.2px}
+.page h3::after{content:"";display:block;width:46px;height:2px;background:var(--gold);margin-top:10px;opacity:.8}
+h4{font:600 11px var(--sans);letter-spacing:1.8px;text-transform:uppercase;color:var(--gold);margin:22px 0 8px}
+#side h4:first-child{margin-top:2px}
+.small{font-size:12px;color:var(--muted);line-height:1.55}
+/* Forms */
+label{display:block;font-size:12px;color:var(--muted);margin-top:9px}
+select,input,button.b{width:100%;padding:8px 10px;margin-top:4px;font:14px var(--sans);color:var(--ink)}
+select,input,textarea{background:var(--card);border:1px solid var(--line);border-radius:8px;outline:none;transition:border-color .15s,box-shadow .15s}
+select:focus,input:focus,textarea:focus{border-color:var(--moss);box-shadow:0 0 0 3px rgba(93,138,107,.18)}
+select[multiple]{padding:4px}select[multiple] option{padding:4px 6px;border-radius:4px}select[multiple] option:checked{background:#dbe7dc linear-gradient(#dbe7dc,#dbe7dc);color:var(--forest)}
+.page button:not(.b):not(.ow),#side button:not(.b){background:var(--card);color:var(--forest);border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer;font:500 12.5px var(--sans)}
+.page button:not(.b):not(.ow):hover{border-color:var(--moss)}
+@media (max-width:1500px){header .brand small{display:none}}
+input[type=checkbox]{accent-color:var(--forest2);margin-right:4px}
+label:has(input[type=checkbox]){color:var(--ink);font-size:13px}
+button.b{background:var(--forest);color:#fbf7ec;border:1px solid var(--forest);border-radius:999px;margin-top:10px;cursor:pointer;font-weight:500;letter-spacing:.2px;transition:background .2s,transform .1s}
+button.b:hover{background:var(--forest2)}button.b:active{transform:translateY(1px)}
+button.b:disabled{opacity:.6;cursor:wait}
+button.g{background:transparent;color:var(--forest);border-color:var(--line)}button.g:hover{background:var(--card);border-color:var(--moss)}
+button.ow{width:auto;display:inline-block;padding:6px 14px;margin:10px 0 0;background:transparent;color:var(--red);border:1px solid #e3c6bd;font-size:12.5px}
+button.ow:hover{background:#fbefeb}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#efe9dc;color:#7a6331;border:1px solid var(--line);margin-bottom:3px}
+/* Legend */
+.leg{font-size:13px;display:flex;align-items:center;gap:8px;margin:4px 0}
+.dot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.25)}
+/* Tables */
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--sh)}
+td,th{border:0;border-bottom:1px solid var(--line2);padding:9px 11px;text-align:left;vertical-align:top}
+th{background:#f1ecdf;font:600 11px var(--sans);letter-spacing:1px;text-transform:uppercase;color:#6d6550}
+tr:last-child td{border-bottom:0}tr:hover td{background:rgba(176,138,62,.05)}
+/* Cards (alerts, connections, lists) */
+#aList>div,#connBox>div>div,#unmapBox>div{background:var(--card);border-radius:12px!important;box-shadow:var(--sh);border-top-color:var(--line)!important;border-right-color:var(--line)!important;border-bottom-color:var(--line)!important;padding:14px 16px!important}
+#aList>div[style*="fff8e1"]{background:#fdf6e3!important}
+#aList b:first-child{font-family:var(--serif);font-size:18px}
+#list,#totals,#gTot,#gList{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+#list{font-size:12px;max-height:240px;overflow:auto}
+pre{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;white-space:pre-wrap}
+#docBody{max-width:900px;line-height:1.65}#docBody h1,#docBody h2{font-family:var(--serif);color:var(--forest)}
+#docBody code{background:#efe9dc;padding:1px 5px;border-radius:4px}
+/* Leaflet */
+.leaflet-popup-content-wrapper{border-radius:12px;box-shadow:var(--sh);font-family:var(--sans)}
+.leaflet-popup-content b:first-child{font-family:var(--serif);font-size:16px}
+.leaflet-container{background:#e9e4d6;font-family:var(--sans)}
+/* Login */
+#login{position:fixed;inset:0;background:radial-gradient(1200px 600px at 80% -10%,#3c6e53 0%,transparent 60%),linear-gradient(160deg,#1d4532,#12301f);display:flex;align-items:center;justify-content:center;z-index:9999;overflow:hidden}
+#login::before{content:"";position:absolute;width:560px;height:560px;border-radius:50%;border:26px solid rgba(231,185,75,.10);border-right-color:transparent;transform:rotate(-30deg);right:-120px;bottom:-160px}
+#login>div{position:relative;background:var(--card);padding:34px 32px 26px;border-radius:18px;width:340px;box-shadow:0 30px 80px rgba(0,0,0,.35)}
+#login h2{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--forest);margin:6px 0 2px;line-height:1.1}
+#login h2 small{display:block;font:500 11px var(--sans);letter-spacing:2.2px;text-transform:uppercase;color:var(--gold);margin-top:8px}
+#login .mark{display:block}
+@media (max-width:760px){main{flex-direction:column}#side,#genPage>div:first-child{width:100%;max-height:42vh;border-right:0!important;border-bottom:1px solid var(--line)!important}
+ #mapPage,#genPage{flex-direction:column}#map,#gmap{min-height:55vh}.page{padding:18px 16px 40px}header .brand small{display:none}}
+@media print{header,#side{display:none}.page{padding:0}}
 </style></head><body>
-<div id="login"><div><h2 style="color:#1b7a3a;margin-top:0">Evergreen Solar<br><small>Field Map Login</small></h2>
-<label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password">
+<div id="login"><div><span class="mark"><svg width="44" height="44" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#e7b94b" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#5d8a6b"/></svg></span><h2>Smart Evergreen<small>Field team sign in</small></h2>
+<label>Username</label><input id="lu"><label>Password</label><input id="lp" type="password" onkeydown="if(event.key==='Enter')login()">
 <button class="b" onclick="login()">Login</button><p id="lerr" style="color:red"></p></div></div>
-<header><b><a href="/" style="color:#fff;text-decoration:none">Smart Evergreen</a> – Field Map</b>
+<header><b class="brand"><a href="/"><svg width="30" height="30" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="none" stroke="#e7b94b" stroke-width="2.4" stroke-dasharray="80 15" stroke-linecap="round" transform="rotate(-60 20 20)"/><path d="M20 29c0-7 3-12 9-14-1 7-4 12-9 14zm0 0c0-5-2-9-7-11 0 6 3 10 7 11z" fill="#9cc7a5"/></svg><span>Smart Evergreen</span></a><small>Field Map</small></b>
 <button data-p="mapPage" class="on" onclick="show(this)">Map</button><button data-p="planPage" onclick="show(this)">Weekly planner</button><button data-p="areaPage" onclick="show(this)">Area summary</button><button data-p="genPage" onclick="show(this)">⚡ Generation</button><button data-p="rmsPage" onclick="show(this)">RMS / Generation</button><button data-p="alertPage" onclick="show(this)">Alerts <span id="aBadge" style="background:#c62828;color:#fff;border-radius:10px;padding:0 6px;display:none"></span></button>
 <button data-p="importPage" onclick="show(this)" class="adm">Import</button><button data-p="usersPage" onclick="show(this)" class="adm">Users</button>
 <button data-p="docsPage" onclick="show(this)">API Docs</button><span id="me"></span><button onclick="logout()">Logout</button></header>
@@ -154,7 +219,7 @@ async function rmsPage(skipConn){if(!skipConn)connPage();unmapped();const b=awai
  $('rTbl').innerHTML='<table><tr><th>Customer</th><th>Project</th><th>Pincode</th><th>Brand</th><th>Inverter SN</th><th>Logger SN</th><th>kW</th><th>Now (kW)</th><th>Today (kWh)</th><th>Today per kW</th><th>Status</th><th>Last update</th><th></th></tr>'+
  d.map(x=>{const pk=x.kw&&x.today_kwh!=null?(x.today_kwh/x.kw).toFixed(2):'-';const bad=x.last_error||x.online===0||(pk!=='-'&&+pk<low&&new Date().getHours()>=17);
  return `<tr style="${bad?'background:#ffebee':''}"><td>${x.customer||''}<br><small>${x.phone||''}</small></td><td>${x.project_ext_id}${String(x.project_ext_id).startsWith('TMP-')?' <span style="color:#ef6c00">(temporary)</span>':''}</td><td>${x.pincode||''}</td><td>${x.brand==='SOLARMAN'?'DEYE':x.brand}</td><td>${x.serial}</td><td>${x.logger_serial||''}</td><td>${x.kw||''}</td><td>${x.last_power_kw??'-'}</td><td>${x.today_kwh??'-'}</td><td>${pk}</td>
- <td>${x.last_error?'<span style="color:red">'+x.last_error+'</span>':x.online===0?'<b style="color:red">OFFLINE</b>':x.online===1?'Online':'-'}</td><td>${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</td><td><a href="#" onclick="rTest(${x.id});return false">Test</a> | <a href="#" onclick="rEdit(${x.id},'${x.project_ext_id}');return false">Edit</a> | <a href="#" onclick="rDel(${x.id});return false">Remove</a></td></tr>`;}).join('')+'</table><p class="small">Red rows = offline, API error, or low generation (check for maintenance / cleaning).</p>';}
+ <td>${x.no_alerts?'<span class="tag">Out of warranty – no alerts</span><br>':''}${x.last_error?'<span style="color:red">'+x.last_error+'</span>':x.online===0?'<b style="color:red">OFFLINE</b>':x.online===1?'Online':'-'}</td><td>${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</td><td><a href="#" onclick="rTest(${x.id});return false">Test</a> | <a href="#" onclick="rEdit(${x.id},'${x.project_ext_id}');return false">Edit</a> | <a href="#" onclick="rDel(${x.id});return false">Remove</a>${['admin','manager'].includes(ME.role)?` | <a href="#" onclick="warranty('${x.serial}',${!x.no_alerts});return false">${x.no_alerts?'Alerts ON again':'Out of warranty'}</a>`:''}</td></tr>`;}).join('')+'</table><p class="small">Red rows = offline, API error, or low generation (check for maintenance / cleaning).</p>';}
 async function rSearch(){const r=await api('/api/projects/search?q='+encodeURIComponent($('rQ').value));$('rProj').innerHTML=r.map(p=>`<option value="${p.ext_id}" data-kw="${p.capacity_kw||''}">${p.customer} – ${p.ext_id} – ${p.pincode||''}</option>`).join('');const o=$('rProj').selectedOptions[0];if(o&&o.dataset.kw)$('rKw').value=o.dataset.kw;}
 async function rAdd(){const r=await api('/api/rms/devices',{method:'POST',body:JSON.stringify({project_ext_id:$('rCust').value?'':$('rProj').value,customer:$('rCust').value,phone:$('rPhone').value,pincode:$('rPin').value,brand:$('rBrand').value,serial:$('rSn').value,logger_serial:$('rLog').value,capacity_kw:$('rKw').value})});if(r.error)return alert(r.error);$('rSn').value=$('rLog').value=$('rCust').value=$('rPhone').value=$('rPin').value='';rmsPage(true);}
 async function rEdit(id,cur){const p=prompt('Link to ERP Project ID (current: '+cur+')',cur.startsWith('TMP-')?'':cur);if(p===null)return;
@@ -177,12 +242,16 @@ async function autoRefresh(force){if(!ME||document.hidden)return;const a=documen
 setInterval(autoRefresh,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh();});
 async function bgStatus(){try{const s=await api('/api/bg-status');const m=s.last_tick?Math.round((Date.now()-Date.parse(s.last_tick))/60000):null;
  let el=$('bgSt');if(!el){el=document.createElement('span');el.id='bgSt';el.style.cssText='font-size:11px;margin:0 8px;opacity:.85';$('me').before(el);}
- el.textContent=m==null?'Background update: not run yet':`Inverter data updated ${m<1?'just now':m+' min ago'}`;el.style.color=m==null||m>40?'#ffcc80':'';
+ el.textContent=m==null?'Data: not run yet':`Data ${m<1?'just now':m+' min ago'}`;el.style.color=m==null||m>40?'#ffcc80':'';
  el.title='Server fetches inverter data every 15 min even when this app is closed.'+(m>40?' Looks stopped – check the Hostinger cron job.':'');}catch(e){}}
+async function warranty(sn,out){if(!confirm(out?`Mark inverter ${sn} as OUT OF WARRANTY?\n\nAll its open alerts will close and no new alerts will come. Generation data is still collected. You can undo this in the RMS tab.`:`Turn alerts back ON for ${sn} (in warranty / AMC)?`))return;
+ const r=await api('/api/rms/warranty',{method:'POST',body:JSON.stringify({serial:sn,out})});if(r.error)return alert(r.error);badge();
+ const p=document.querySelector('header button.on')?.dataset.p;if(p==='rmsPage')rmsPage(true);else alertsPage();}
 async function alertsPage(){const r=await api('/api/alerts?status='+$('aStatus').value);badge();
  $('aList').innerHTML=r.length?r.map(a=>`<div style="border:1px solid #ccc;border-left:6px solid ${a.due?'#fb8c00':ATYPE[a.type]};border-radius:6px;margin:10px 0;padding:10px;${a.due?'background:#fff8e1':''}">
  <b style="color:${ATYPE[a.type]}">${ANAME[a.type]||a.type}</b> – <b>${a.customer||a.project_ext_id}</b> ${a.phone?`<a href="tel:${a.phone}">${a.phone}</a>`:''} | ${a.area||''} ${a.pincode||''} | ${a.brand||''} SN ${a.serial}<br>
  ${a.message}<br><span class="small">Open since ${new Date(a.opened_at).toLocaleString('en-IN')} (${a.age_hrs} h) | Follow-up round ${a.round}${a.engineer?' | Engineer: '+a.engineer:''}${a.status==='RESOLVED'?' | Resolved by '+a.resolved_by+' at '+new Date(a.resolved_at).toLocaleString('en-IN'):''}</span>
+ ${a.status==='OPEN'&&['admin','manager'].includes(ME.role)?`<button class="b ow" onclick="warranty('${a.serial}',true)">Out of warranty – stop alerts</button>`:''}
  ${a.status==='OPEN'?`<div style="margin-top:8px;padding:8px;background:#fff;border:1px dashed #999;border-radius:4px"><b>${a.due?'❓ ':''}${a.question.q}</b>
  <select id="ans${a.id}">${a.question.options.map(o=>`<option>${o}</option>`).join('')}</select>
  <input id="eng${a.id}" placeholder="Engineer name (if assigned)" value="${a.engineer||''}"><input id="note${a.id}" placeholder="Remarks">
@@ -206,7 +275,7 @@ function genDraw(fit){const b=$('gBrand').value,f=$('gFilter').value,qq=$('gQ').
  gLayer.clearLayers();let kw=0,today=0,live=0,al=0,nl=0;const pts=[];
  l.forEach(x=>{kw+=+x.kw||0;today+=+x.today_kwh||0;live+=+x.last_power_kw||0;if(x.alerts)al++;const [c,t]=gColor(x);
   if(x.lat==null){nl++;return;}pts.push([x.lat,x.lng]);
-  L.circleMarker([x.lat,x.lng],{radius:x.alerts?10:7,color:'#222',weight:1,fillColor:c,fillOpacity:.9}).bindPopup(`<b>${x.name||x.serial}</b>${x.project_ext_id?'':' <i style="color:#ef6c00">(not mapped)</i>'}<br>${x.brand==='SOLARMAN'?'DEYE':x.brand} · SN ${x.serial}<br>${x.kw?x.kw+' kW · ':''}Now ${x.last_power_kw??'-'} kW<br>Today ${x.today_kwh??'-'} kWh ${x.kw&&x.today_kwh!=null?'('+(x.today_kwh/x.kw).toFixed(2)+' kWh/kW)':''}<br>Lifetime ${x.total_kwh!=null?Math.round(x.total_kwh)+' kWh':'-'}<br>Status: <b style="color:${c}">${t}</b>${x.alerts?'<br>Open alerts: <b>'+x.alerts+'</b>':''}${x.phone?'<br>'+x.phone:''}<br><small>${x.city||''} · updated ${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</small>`).addTo(gLayer);});
+  L.circleMarker([x.lat,x.lng],{radius:x.alerts?10:7,color:'#222',weight:1,fillColor:c,fillOpacity:.9}).bindPopup(`<b>${x.name||x.serial}</b>${x.project_ext_id?'':' <i style="color:#ef6c00">(not mapped)</i>'}<br>${x.brand==='SOLARMAN'?'DEYE':x.brand} · SN ${x.serial}<br>${x.kw?x.kw+' kW · ':''}Now ${x.last_power_kw??'-'} kW<br>Today ${x.today_kwh??'-'} kWh ${x.kw&&x.today_kwh!=null?'('+(x.today_kwh/x.kw).toFixed(2)+' kWh/kW)':''}<br>Lifetime ${x.total_kwh!=null?Math.round(x.total_kwh)+' kWh':'-'}<br>Status: <b style="color:${c}">${t}</b>${x.alerts?'<br>Open alerts: <b>'+x.alerts+'</b>':''}${x.no_alerts?'<br><i>Out of warranty – no alerts</i>':''}${x.phone?'<br>'+x.phone:''}<br><small>${x.city||''} · updated ${x.last_fetch?new Date(x.last_fetch).toLocaleString('en-IN'):'-'}</small>`).addTo(gLayer);});
  $('gTot').innerHTML=`Systems: <b>${l.length}</b> · ${kw.toFixed(0)} kW<br>Live power: <b>${live.toFixed(1)} kW</b><br>Today: <b>${today.toFixed(0)} kWh</b>${kw?` (${(today/kw).toFixed(2)} kWh/kW)`:''}<br>With open alerts: <b style="color:#c62828">${al}</b>${nl?`<br><span style="color:#ef6c00">${nl} systems have no location yet</span>`:''}`;
  $('gList').innerHTML=l.filter(x=>x.alerts).slice(0,80).map(x=>`<div style="padding:4px 0;border-bottom:1px solid #ddd"><span style="color:${gColor(x)[0]}">●</span> ${x.name||x.serial} – ${x.alerts}</div>`).join('')||'No open alerts 🎉';
  if(fit&&pts.length)GMAP.fitBounds(L.latLngBounds(pts).pad(.1));}

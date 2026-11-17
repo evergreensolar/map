@@ -30,7 +30,7 @@ const SCHEMA=[
 `CREATE TABLE IF NOT EXISTS web_enquiries(id INT AUTO_INCREMENT PRIMARY KEY,ref VARCHAR(30) UNIQUE,name VARCHAR(120),phone VARCHAR(15),email VARCHAR(120),pincode VARCHAR(10),segment VARCHAR(20),monthly_bill VARCHAR(30),message VARCHAR(600),page VARCHAR(200),ip VARCHAR(60),created_at VARCHAR(30),erp_status VARCHAR(20) DEFAULT 'PENDING',erp_response VARCHAR(300),INDEX(created_at))`,
 `CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`];
 async function initDB(){for(const s of SCHEMA)await q(s);
- for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
+ for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
 // ---- Stage normalisation (Evergreen workflow) ----
 const STAGES=['ENQUIRY','SURVEY_REQUESTED','SURVEY_SCHEDULED','SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE','PROJECT_CREATED','AGREEMENT_PENDING','DISPATCH_PENDING','INSTALLATION_PENDING','NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED','OTHER'];
 function normStage(s){const t=String(s||'').toUpperCase().replace(/[^A-Z]+/g,'_');if(STAGES.includes(t))return t;
@@ -194,12 +194,13 @@ app.post('/api/rms/discover/:brand',auth(['admin','manager']),W(async(req,res)=>
  res.json(await discoverBrand(b,40000));}));
 // ---- Generation page data (separate from enquiry/project map) ----
 app.get('/api/gen/map',auth(),W(async(req,res)=>res.json(await q(`SELECT d.id,d.brand,d.serial,d.plant_name,d.city,d.project_ext_id,COALESCE(p.customer,d.plant_name) name,p.phone,
- COALESCE(d.capacity_kw,p.capacity_kw) kw,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,d.today_kwh,d.last_power_kw,d.total_kwh,d.online,d.last_fetch,d.last_error,
+ COALESCE(d.capacity_kw,p.capacity_kw) kw,COALESCE(p.lat,d.site_lat) lat,COALESCE(p.lng,d.site_lng) lng,d.today_kwh,d.last_power_kw,d.total_kwh,d.online,d.last_fetch,d.last_error,d.no_alerts,
  (SELECT GROUP_CONCAT(DISTINCT a.type) FROM alerts a WHERE a.serial=d.serial AND a.status='OPEN') alerts
  FROM rms_devices d LEFT JOIN projects p ON p.ext_id=d.project_ext_id`))));
 // ---- Alerts: open / auto-resolve ----
 const GRID_WAIT=+(process.env.GRID_FAULT_WAIT_HOURS||12),FOLLOW_HRS=+(process.env.ALERT_FOLLOWUP_HOURS||24);
 async function openAlert(d,type,msg){if(await one("SELECT 1 x FROM alerts WHERE serial=? AND type=? AND status='OPEN'",[d.serial,type]))return;
+ if(await one('SELECT 1 x FROM rms_devices WHERE serial=? AND no_alerts=1',[d.serial]))return; // out of warranty – no alerts
  const ask=type==='GRID'?new Date(Date.now()+GRID_WAIT*36e5).toISOString():now();
  const r=await q('INSERT INTO alerts(serial,project_ext_id,type,message,opened_at,next_ask_at) VALUES(?,?,?,?,?,?)',[d.serial,d.project_ext_id,type,String(msg).slice(0,600),now(),ask]);
  await q('INSERT INTO alert_log(alert_id,at,who,note) VALUES(?,?,?,?)',[r.insertId,now(),'SYSTEM','Alert opened: '+String(msg).slice(0,480)]);}
@@ -269,6 +270,13 @@ app.post('/api/alerts/:id/answer',auth(),W(async(req,res)=>{const a=await one('S
  const next=new Date(Date.now()+(a.type==='GRID'&&/power cut|wait/i.test(answer)?GRID_WAIT:FOLLOW_HRS)*36e5).toISOString();
  await q('UPDATE alerts SET last_answer=?,last_answer_by=?,last_answer_at=?,next_ask_at=?,rnd=rnd+1,engineer=COALESCE(?,engineer) WHERE id=?',[(answer+(note?' – '+note:'')).slice(0,400),u,now(),next,engineer||null,a.id]);
  res.json({ok:true,next_ask_at:next});}));
+// Out of warranty: stop all alerts for this inverter (data is still collected). out=false turns alerts back on.
+app.post('/api/rms/warranty',auth(['admin','manager']),W(async(req,res)=>{const {serial,out}=req.body||{};const u=req.session.user.name||req.session.user.username;
+ if(!serial||!await one('SELECT 1 x FROM rms_devices WHERE serial=?',[serial]))return res.status(404).json({error:'inverter not found'});
+ await q('UPDATE rms_devices SET no_alerts=?,no_alerts_reason=?,no_alerts_by=?,no_alerts_at=? WHERE serial=?',[out?1:0,out?'OUT_OF_WARRANTY':null,u,now(),serial]);let closed=0;
+ if(out)for(const a of await q("SELECT id FROM alerts WHERE serial=? AND status='OPEN'",[serial])){await q("UPDATE alerts SET status='RESOLVED',resolved_at=?,resolved_by=? WHERE id=?",[now(),u,a.id]);
+  await q('INSERT INTO alert_log(alert_id,at,who,note) VALUES(?,?,?,?)',[a.id,now(),u,'Out of warranty – alerts stopped for this inverter']);closed++;}
+ res.json({ok:true,closed});}));
 app.post('/api/alerts/:id/resolve',auth(['admin','manager','engineer']),W(async(req,res)=>{const u=req.session.user.name||req.session.user.username;
  await q("UPDATE alerts SET status='RESOLVED',resolved_at=?,resolved_by=? WHERE id=? AND status='OPEN'",[now(),u,req.params.id]);
  await q('INSERT INTO alert_log(alert_id,at,who,note) VALUES(?,?,?,?)',[req.params.id,now(),u,'Manually resolved: '+(req.body.note||'')]);res.json({ok:true});}));
