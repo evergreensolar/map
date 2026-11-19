@@ -136,6 +136,25 @@ app.get('/api/enquiries/by-pincode',auth(),W(async(req,res)=>{const {from,to,sou
 // Survey requests kept as ENQUIRIES in the ERP (status mentions survey and is not done)
 const SURVEY_ENQ="status REGEXP 'survey' AND status NOT REGEXP 'done|complet|submit|cancel|closed|reject'";
 app.get('/api/enquiries/survey',auth(),W(async(req,res)=>res.json((await q(`SELECT ext_id,customer,phone,pincode,area,lat,lng,status,enquiry_date,assigned_to,source FROM enquiries WHERE ${SURVEY_ENQ} ORDER BY enquiry_date DESC LIMIT 2000`)).map(e=>({...e,stage:normStage(e.status)})))));
+// ---- Map "work buckets": one click = one stage of the workflow ----
+const BUCKETS={SURVEY:['SURVEY_REQUESTED','SURVEY_SCHEDULED'],DESIGN:['SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE'],AGREEMENT:['PROJECT_CREATED','AGREEMENT_PENDING'],DISPATCH:['DISPATCH_PENDING'],
+ INSTALL:['INSTALLATION_PENDING'],NETMETER:['NET_METERING_PENDING'],DOCS:['DOCUMENT_SENDING'],COMPLETED:['COMPLETED'],OTHER:['OTHER','ENQUIRY']};
+const daysSince=d=>d?Math.max(0,Math.floor((Date.now()-Date.parse(d+'T00:00:00+05:30'))/864e5)):null;
+async function bucketItems(c){let out=[];
+ if(BUCKETS[c])out=(await q('SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,stage,stage_label,COALESCE(stage_date,created_date) since,engineer,team,capacity_kw FROM projects WHERE stage IN (?)',[BUCKETS[c]])).map(x=>({kind:'Project',...x}));
+ if(c==='SURVEY')out=out.concat((await q(`SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status,enquiry_date since,assigned_to engineer FROM enquiries WHERE ${SURVEY_ENQ}`)).map(x=>({kind:'Enquiry',...x,stage:normStage(x.status),stage_label:x.status})));
+ if(c==='ENQUIRY')out=(await q(`SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status stage_label,enquiry_date since,assigned_to engineer,source FROM enquiries WHERE NOT (${SURVEY_ENQ}) AND COALESCE(status,'') NOT REGEXP 'closed|lost|cancel|reject|convert|won'`)).map(x=>({kind:'Enquiry',...x,stage:'ENQUIRY'}));
+ if(c==='SERVICE')out=(await q("SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,type stage_label,status,COALESCE(scheduled_date,created_date) since,engineer,issue FROM service WHERE status NOT IN ('CLOSED','DONE','COMPLETED')")).map(x=>({kind:'Service',...x,stage:'SERVICE_'+(x.stage_label||'')}));
+ out.forEach(x=>{x.days=daysSince(x.since);});return out.sort((a,b)=>(b.days??-1)-(a.days??-1));}
+app.get('/api/map/bucket',auth(),W(async(req,res)=>res.json(await bucketItems(String(req.query.c||'SURVEY').toUpperCase()))));
+app.get('/api/map/counts',auth(),W(async(req,res)=>{const out={};
+ for(const c of [...Object.keys(BUCKETS),'ENQUIRY','SERVICE']){const l=await bucketItems(c);out[c]={n:l.length,located:l.filter(x=>x.lat!=null).length,
+  ...(c==='SURVEY'?{requested:l.filter(x=>x.stage==='SURVEY_REQUESTED').length,scheduled:l.filter(x=>x.stage==='SURVEY_SCHEDULED').length}:{})};}
+ // daily snapshot -> change since the previous day (e.g. dispatched projects leave "Dispatch")
+ const day=istDay(),snap=Object.fromEntries(Object.entries(out).map(([k,v])=>[k,v.n]));await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',['snap:'+day,JSON.stringify(snap).slice(0,200)]);
+ const prev=await one("SELECT k,v FROM kv_state WHERE k LIKE 'snap:%' AND k<? ORDER BY k DESC LIMIT 1",['snap:'+day]);
+ if(prev){const p=JSON.parse(prev.v);for(const k in out)if(p[k]!=null)out[k].delta=out[k].n-p[k];out._since=prev.k.slice(5);}
+ res.json(out);}));
 // Data check for admins: what arrived, what has no location, which stages were not recognised
 app.get('/api/data-status',auth(['admin','manager']),W(async(req,res)=>{const c=async(t)=>(await one(`SELECT COUNT(*) n,SUM(lat IS NOT NULL) located FROM ${t}`));
  const push={};for(const r of await q("SELECT k,v FROM kv_state WHERE k LIKE 'erp_push_%'"))push[r.k.slice(9)]=JSON.parse(r.v);

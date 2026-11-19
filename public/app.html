@@ -134,6 +134,14 @@ html[data-theme=light] .sres{background:#fff}
 .rnum{background:none;border:0}.rnum b{display:flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#1de9b6,#22b8f0);color:#03140f!important;font:700 12px var(--mono);box-shadow:0 0 0 2px #fff,0 0 12px rgba(56,240,200,.7)}
 .rnum.st b{background:#ffc34d}
 @media (max-width:760px){#routePage{flex-direction:column}.rpside{width:100%;max-height:none;border-right:0;border-bottom:1px solid var(--line)}#rmap{min-height:60vh}}
+/* Map work buckets */
+.mchips{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mchip{display:flex;justify-content:space-between;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:10px;padding:7px 10px;cursor:pointer;color:var(--ink);font:500 12.5px var(--sans);text-align:left}
+.mchip b{font:700 16px var(--mono);color:var(--ink)}.mchip small{display:block;font:600 10px var(--mono)}.mchip .up{color:var(--amber)}.mchip .dn{color:var(--ok)}
+.mchip.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c),0 0 14px color-mix(in srgb,var(--c) 40%,transparent);background:color-mix(in srgb,var(--c) 12%,var(--card))}
+.mitem{display:flex;gap:8px;align-items:flex-start;padding:8px 6px;border-bottom:1px solid var(--line2);cursor:pointer}.mitem:hover{background:rgba(56,240,200,.05)}
+.mitem input{width:auto;margin:3px 0 0}.mitem .nm{flex:1;min-width:0}.mitem .dy{font:600 11px var(--mono);white-space:nowrap}.dy.old{color:var(--red)}.dy.mid{color:var(--amber)}
+.subf{display:flex;gap:4px;margin-top:6px}.subf button{flex:1}
 /* AI core gauges */
 .core{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0 6px}
 .gauge{position:relative;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 12px 12px;display:flex;align-items:center;gap:12px;box-shadow:var(--glow);overflow:hidden}
@@ -203,6 +211,11 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <main>
 <div id="mapPage" style="display:flex;flex:1">
 <div id="side">
+<div id="mWork"><h4 style="margin-top:2px">Work stage – one click</h4><div id="mChips" class="mchips"></div>
+<div id="mHead" class="small" style="margin-top:10px"></div>
+<input id="mFind" placeholder="Search name, area, pincode, engineer…" oninput="mDraw(true)" style="margin-top:8px">
+<div id="mActions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div><div id="mItems"></div></div>
+<details class="fold" id="advWrap" style="margin-top:16px"><summary>Advanced filters (all stages / layers)</summary>
 <h4>Layers</h4>
 <label><input type="checkbox" id="lEnq" checked style="width:auto"> Enquiries by pincode</label>
 <label><input type="checkbox" id="lSurv" checked style="width:auto"> Survey requests (from ERP enquiries)</label><label><input type="checkbox" id="lProj" checked style="width:auto"> Projects</label><label><input type="checkbox" id="lSvc" checked style="width:auto"> Service tickets (maintenance / cleaning / AMC)</label>
@@ -210,14 +223,14 @@ html[data-theme=light] header::after{opacity:.35}html[data-theme=light] #bgSt{co
 <label>Date field</label><select id="fDateField"><option value="stage_date">Current stage date</option><option value="survey_date">Survey date</option><option value="dispatch_date">Dispatch date</option><option value="installation_date">Installation date</option><option value="completion_date">Completion date</option><option value="created_date">Project created</option></select>
 <label>From</label><input type="date" id="fFrom"><label>To</label><input type="date" id="fTo">
 <label>Team</label><select id="fTeam"></select><label>Engineer</label><select id="fEng"></select><label>Enquiry source</label><select id="fSrc"></select>
-<button class="b" onclick="load()">Apply</button>
+<button class="b" onclick="advApply()">Apply</button>
 <h4>Legend</h4><div id="legend"></div><div class="leg"><span class="dot" style="background:rgba(255,152,0,.5)"></span>Enquiries (circle size = count)</div>
 <div class="leg"><span style="width:12px;height:12px;background:#d50000;transform:rotate(45deg)"></span>Maintenance</div><div class="leg"><span style="width:12px;height:12px;background:#0091ea;transform:rotate(45deg)"></span>Cleaning</div><div class="leg"><span style="width:12px;height:12px;background:#00c853;transform:rotate(45deg)"></span>AMC</div><h4>Totals</h4><div id="totals" class="small"></div>
 <h4>Nearby completed projects</h4><div class="small">Turn on, then click any spot on the map (customer's house).</div>
 <label><input type="checkbox" id="nearMode" style="width:auto"> Nearby mode</label><label>Radius (km)</label><input id="nearKm" type="number" value="3">
 <h4>Route plan (shown projects)</h4><label>Max stops</label><input id="maxStops" type="number" value="8">
 <button class="b" onclick="route()">Plan route from office</button><button class="b g" onclick="clearRoute()">Clear</button>
-<div id="list"></div></div>
+<div id="list"></div></details></div>
 <div id="map"></div></div>
 <div id="genPage" style="display:none;flex:1;min-height:0">
 <div style="width:330px;overflow:auto;padding:10px;background:#f4f7f4;border-right:1px solid #ccc">

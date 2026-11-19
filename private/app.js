@@ -15,7 +15,7 @@ async function init(){try{ME=await api('/auth/me');}catch(e){return;}$('login').
  document.querySelectorAll('.adm').forEach(b=>b.style.display=['admin','manager'].includes(ME.role)?'':'none');if(ME.role!=='admin')document.querySelector('[data-p=usersPage]').style.display='none';
  const s=await api('/api/summary');const opt=(a)=>'<option value="">All</option>'+a.map(x=>`<option>${x}</option>`).join('');
  $('fTeam').innerHTML=opt(s.filters.teams);$('fEng').innerHTML=opt(s.filters.engineers);$('fSrc').innerHTML=opt(s.filters.sources);
- if(ME.role==='engineer'&&ME.team)$('fTeam').value=ME.team;await load();
+ if(ME.role==='engineer'&&ME.team)$('fTeam').value=ME.team;await mBucket(MB);
  let t=location.hash.slice(1);if(!t)try{t=localStorage.getItem('ef_tab')||'';}catch(e){}
  const tb=t&&document.querySelector(`header button[data-p="${t}"]`);if(tb&&tb.style.display!=='none'&&t!=='mapPage')show(tb);bgStatus();}
 function show(b){document.querySelectorAll('header button[data-p]').forEach(x=>x.classList.remove('on'));b.classList.add('on');
@@ -116,7 +116,7 @@ setInterval(badge,60000);
 let LAST_REFRESH=Date.now();const REFRESH_MS=5*60e3;
 async function autoRefresh(force){if(!ME||document.hidden)return;const a=document.activeElement;if(!force&&a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))return;
  if(!force&&Date.now()-LAST_REFRESH<REFRESH_MS)return;LAST_REFRESH=Date.now();const p=document.querySelector('header button.on')?.dataset.p;
- try{if(p==='mapPage')await load(true);else if(p==='genPage'&&GMAP){GDATA=await api('/api/gen/map');genDraw(false);}else if(p==='rmsPage')await rmsPage(true);
+ try{if(p==='mapPage'){if(MB==='ADV')await load(true);else await mBucket(MB,true);}else if(p==='genPage'&&GMAP){GDATA=await api('/api/gen/map');genDraw(false);}else if(p==='rmsPage')await rmsPage(true);
   else if(p==='alertPage')await alertsPage();else if(p==='todayPage')await todayPage();else if(p==='areaPage')await areas();badge();bgStatus();}catch(e){}}
 setInterval(autoRefresh,30000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)autoRefresh();});
 async function bgStatus(){try{const s=await api('/api/bg-status');const m=s.last_tick?Math.round((Date.now()-Date.parse(s.last_tick))/60000):null;
@@ -335,3 +335,36 @@ async function dataStatus(){const d=await api('/api/data-status');if(d.error){$(
   <div><h4>Enquiry status values</h4>${tbl(d.enquiry_statuses,'status','n')}</div>
   <div><h4>Pincodes with no location</h4>${tbl(d.no_location_pincodes,'pincode','n')}<p class="small">Add these in Excel import → type "pincodes" (pincode, lat, lng, area) if they stay here.</p></div></div>`;}
 async function fixLoc(b){b.disabled=true;b.textContent='Working…';const r=await api('/api/data-status/fix-locations',{method:'POST'});b.disabled=false;alert(`${r.located} records got a location.`);dataStatus();}
+
+// ---------- Map: work buckets (one click = one workflow stage) ----------
+const BK=[['SURVEY','Site survey','#fb8c00'],['DESIGN','Design','#ba68c8'],['AGREEMENT','Agreement','#5c6bc0'],['DISPATCH','Dispatch','#e53935'],['INSTALL','Installation','#8e24aa'],['NETMETER','Net metering','#00acc1'],['DOCS','Documents','#26a69a'],['COMPLETED','Completed','#2e9e44'],['ENQUIRY','Enquiries','#9e9e9e'],['SERVICE','Service','#0091ea'],['OTHER','Other / unknown','#8d6e63']];
+let MB=(()=>{try{return localStorage.getItem('ef_mb')||'SURVEY'}catch(e){return 'SURVEY'}})(),MITEMS=[],MSEL=new Set(),MCOUNTS={},MSUB='';
+function mChipsRender(){$('mChips').innerHTML=BK.filter(([k])=>k!=='OTHER'||(MCOUNTS.OTHER?.n||0)>0).map(([k,t,c])=>{const x=MCOUNTS[k]||{n:'…'},d=x.delta;
+ return `<button class="mchip ${MB===k?'on':''}" style="--c:${c}" onclick="mBucket('${k}')"><span>${t}${d?`<small class="${d>0?'up':'dn'}">${d>0?'▲ +'+d:'▼ '+d} since ${MCOUNTS._since?MCOUNTS._since.slice(5):'yesterday'}</small>`:''}</span><b>${x.n}</b></button>`;}).join('');}
+function advApply(){MB='ADV';mChipsRender();$('mItems').innerHTML='';$('mActions').innerHTML='';$('mHead').innerHTML='Showing advanced filter result.';load();}
+async function mBucket(c,keep){if(c!==MB){MSEL.clear();MSUB='';}MB=c;try{localStorage.setItem('ef_mb',c);}catch(e){}
+ const [items,counts]=await Promise.all([api('/api/map/bucket?c='+c),api('/api/map/counts')]);MITEMS=items;MCOUNTS=counts;mChipsRender();mDraw(keep);}
+const mColor=x=>x.kind==='Service'?(SVC[x.stage_label]||'#0091ea'):(COLORS[x.stage]||'#9e9e9e');
+function mView(){const qq=($('mFind').value||'').toLowerCase().trim();return MITEMS.filter(x=>(!MSUB||x.stage===MSUB)&&(!qq||`${x.name||''} ${x.ref} ${x.area||''} ${x.pincode||''} ${x.engineer||''} ${x.phone||''}`.toLowerCase().includes(qq)));}
+function mDraw(keepView){projLayer.clearLayers();enqLayer.clearLayers();const l=mView(),bk=BK.find(b=>b[0]===MB)||BK[0],on=l.filter(x=>x.lat!=null);
+ on.forEach(x=>{const c=mColor(x),sel=MSEL.has(x.ref);
+  x._m=L.circleMarker([x.lat,x.lng],{radius:sel?11:8,weight:sel?3:1.5,color:sel?'#fff':'#111',fillColor:c,fillOpacity:.92}).bindPopup(()=>`<b>${x.name||''}</b> <span class="sub">(${x.kind} ${x.ref})</span><br><b style="color:${c}">${x.kind==='Service'?x.stage_label+' ticket':NAMES[x.stage]||x.stage}</b>${x.stage_label&&x.kind!=='Service'?' – '+x.stage_label:''}<br>${x.days!=null?`Waiting <b>${x.days}</b> days (since ${fmt(x.since)})<br>`:''}${x.engineer?'Engineer: '+x.engineer+'<br>':''}${x.capacity_kw?x.capacity_kw+' kW<br>':''}${x.issue?x.issue+'<br>':''}${[x.address,x.area,x.pincode].filter(Boolean).join(', ')}<br>${x.phone?`<a href="tel:${x.phone}">📞 ${x.phone}</a> · `:''}<a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${x.lat},${x.lng}">Directions</a><br><a href="#" onclick="mToggle('${x.ref}');return false">${MSEL.has(x.ref)?'✓ Selected for route (tap to remove)':'+ Select for route'}</a>`).addTo(projLayer);});
+ if(on.length&&!keepView)map.fitBounds(L.latLngBounds(on.map(x=>[x.lat,x.lng])).pad(.12));
+ const s=MCOUNTS.SURVEY||{};
+ $('mHead').innerHTML=`<b style="color:${bk[2]}">${bk[1]}</b>: <b>${l.length}</b> ${l.length!==MITEMS.length?`of ${MITEMS.length} `:''}· on map ${on.length}${l.length-on.length?` · <span style="color:var(--amber)">${l.length-on.length} without location</span>`:''}`+
+  (MB==='SURVEY'?`<div class="subf"><button class="mini" style="${MSUB===''?'border-color:var(--neon)':''}" onclick="MSUB='';mDraw(true)">All</button><button class="mini" style="${MSUB==='SURVEY_REQUESTED'?'border-color:var(--neon)':''}" onclick="MSUB='SURVEY_REQUESTED';mDraw(true)">Requested · ${s.requested??''}</button><button class="mini" style="${MSUB==='SURVEY_SCHEDULED'?'border-color:var(--neon)':''}" onclick="MSUB='SURVEY_SCHEDULED';mDraw(true)">Scheduled · ${s.scheduled??''}</button></div>`:'');
+ const nSel=[...MSEL].filter(r=>MITEMS.some(x=>x.ref===r)).length;
+ $('mActions').innerHTML=`<button class="mini" onclick="mSelAll(true)">Select all</button><button class="mini" onclick="mSelAll(false)">None</button><button class="mini" style="border-color:var(--neon)" onclick="mRoute()">➜ Route ${nSel?'('+nSel+')':'(all on map)'}</button><button class="mini" onclick="mWa()">WhatsApp list</button>`;
+ $('mItems').innerHTML=l.length?l.slice(0,400).map((x,i)=>`<div class="mitem" onclick="mFocus('${x.ref}',event)"><input type="checkbox" ${MSEL.has(x.ref)?'checked':''} onclick="event.stopPropagation();mToggle('${x.ref}')"><div class="nm"><b>${x.name||x.ref}</b>${x.kind==='Enquiry'&&MB==='SURVEY'?' <span class="tag">enquiry</span>':''}<div class="sub">${[x.area,x.pincode].filter(Boolean).join(' · ')}${x.stage_label?' · '+x.stage_label:''}${x.engineer?' · '+x.engineer:''}${x.lat==null?' · <span style="color:var(--amber)">no location</span>':''}</div></div><span class="dy ${x.days>14?'old':x.days>7?'mid':''}">${x.days!=null?x.days+' d':''}</span></div>`).join(''):'<p class="small" style="margin-top:10px">Nothing pending here 🎉</p>';}
+function mToggle(r){MSEL.has(r)?MSEL.delete(r):MSEL.add(r);map.closePopup();mDraw(true);}
+function mSelAll(v){mView().forEach(x=>v?MSEL.add(x.ref):MSEL.delete(x.ref));mDraw(true);}
+function mFocus(r,e){const x=MITEMS.find(y=>y.ref===r);if(!x)return;if(x.lat==null)return alert('This record has no location yet (pincode not found).');map.setView([x.lat,x.lng],Math.max(map.getZoom(),14));setTimeout(()=>x._m&&x._m.openPopup(),250);}
+function mRoute(){let l=mView().filter(x=>x.lat!=null);const sel=l.filter(x=>MSEL.has(x.ref));if(sel.length)l=sel;if(!l.length)return alert('No sites with a location to route.');
+ if(l.length>25&&!confirm(`${l.length} sites – that is a lot for one day. Use the first 25 (oldest first)?`))return;l=l.slice(0,25);
+ RP.stops=l.map(x=>({name:x.name||x.ref,phone:x.phone||'',address:[x.address,x.area,x.pincode].filter(Boolean).join(', '),ref:x.ref,kind:x.kind,lat:+x.lat,lng:+x.lng}));RP.id=null;
+ $('rpPurpose').value={SURVEY:'Site survey',DISPATCH:'Material delivery',INSTALL:'Installation',SERVICE:'Service / maintenance'}[MB]||'Other';
+ show(document.querySelector('header button[data-p=routePage]'));setTimeout(rpOptimize,400);}
+function mWa(){const l=mView(),bk=BK.find(b=>b[0]===MB)||BK[0];const sel=l.filter(x=>MSEL.has(x.ref)),use=sel.length?sel:l;
+ let m=`*${bk[1]} pending – ${use.length}* (${new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short'})})`;
+ use.slice(0,60).forEach((x,i)=>{m+=`\n${i+1}. ${x.name||x.ref} – ${[x.area,x.pincode].filter(Boolean).join(' ')}${x.phone?' – '+x.phone:''}${x.days!=null?' – '+x.days+' d':''}`;});
+ if(use.length>60)m+=`\n… and ${use.length-60} more`;window.open('https://wa.me/?text='+encodeURIComponent(m),'_blank','noopener');}
