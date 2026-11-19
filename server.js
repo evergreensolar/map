@@ -234,7 +234,11 @@ app.get('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const sv=Object.f
 app.post('/api/rms/settings',auth(['admin']),W(async(req,res)=>{const ok=new Set(RMS.BRANDS.flatMap(b=>RMS.connectors[b].env));
  for(const [k,v] of Object.entries(req.body||{}))if(ok.has(k)&&v!==''&&v!=null)await q('REPLACE INTO settings(k,v) VALUES(?,?)',[k,String(v).trim()]);await loadSettings();res.json({ok:true});}));
 // ---- Pull from ERP (when the ERP offers GET/list URLs). Same field names as the push API. ----
-const ERP_PULL_KEYS=['ERP_PULL_BASE','ERP_PULL_KEY','ERP_PULL_HEADER','ERP_PULL_PROJECTS','ERP_PULL_ENQUIRIES','ERP_PULL_SERVICE'];
+const ERP_PULL_KEYS=['ERP_PULL_BASE','ERP_PULL_KEY','ERP_PULL_HEADER','ERP_PULL_PROJECTS','ERP_PULL_ENQUIRIES','ERP_PULL_SERVICE','ERP_PULL_EVERY']
+// Scheduled pull at fixed India times: every N hours from midnight (6 -> 00:00, 06:00, 12:00, 18:00 IST)
+const pullEvery=async()=>{const v=+((await one("SELECT v FROM settings WHERE k='ERP_PULL_EVERY'"))?.v||6);return [1,2,3,4,6,8,12,24].includes(v)?v:6;};
+const pullSlot=(h)=>{const t=new Date(Date.now()+5.5*36e5);return t.toISOString().slice(0,10)+'#'+Math.floor(t.getUTCHours()/h);};
+async function nextPullAt(){const h=await pullEvery(),t=new Date(Date.now()+5.5*36e5),nh=(Math.floor(t.getUTCHours()/h)+1)*h;const d=new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),t.getUTCDate(),nh)-5.5*36e5);return d.toISOString();};
 async function erpGetAll(path){const base=String((await one("SELECT v FROM settings WHERE k='ERP_PULL_BASE'"))?.v||'').trim().replace(/\/+$/,'');if(!base)throw new Error('ERP pull URL not set');
  const key=(await one("SELECT v FROM settings WHERE k='ERP_PULL_KEY'"))?.v||'',hdr=(await one("SELECT v FROM settings WHERE k='ERP_PULL_HEADER'"))?.v||'X-API-Key';
  let url=/^https?:/.test(path)?path:base+(path.startsWith('/')?path:'/'+path);const out=[];let first=null;
@@ -250,7 +254,7 @@ async function erpPull(){const cfg=Object.fromEntries((await q("SELECT k,v FROM 
   try{const {list,first}=await erpGetAll(path);const r=await bulk(fn,list);res[t]={...r,errors:r.errors.slice(0,5),sample_fields:first?Object.keys(first).slice(0,30):[]};}catch(e){res[t]={error:e.message};}}
  await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_last',?)",[JSON.stringify({at:now(),res}).slice(0,200)]);return res;}
 app.get('/api/erp-pull',auth(['admin']),W(async(req,res)=>{const sv=Object.fromEntries((await q("SELECT k,v FROM settings WHERE k LIKE 'ERP_PULL_%'")).map(x=>[x.k,x.v]));
- res.json({fields:ERP_PULL_KEYS.map(k=>({key:k,set:!!sv[k],value:k==='ERP_PULL_KEY'?'':(sv[k]||'')})),last:(await one("SELECT v FROM kv_state WHERE k='erp_pull_last'"))?.v||null});}));
+ res.json({fields:ERP_PULL_KEYS.map(k=>({key:k,set:!!sv[k],value:k==='ERP_PULL_KEY'?'':(sv[k]||'')})),every:await pullEvery(),next:sv.ERP_PULL_BASE?await nextPullAt():null,last:(await one("SELECT v FROM kv_state WHERE k='erp_pull_last'"))?.v||null});}));
 app.post('/api/erp-pull/settings',auth(['admin']),W(async(req,res)=>{for(const [k,v] of Object.entries(req.body||{}))if(ERP_PULL_KEYS.includes(k)&&v!=null&&v!=='')await q('REPLACE INTO settings(k,v) VALUES(?,?)',[k,String(v).trim()]);res.json({ok:true});}));
 app.post('/api/erp-pull/run',auth(['admin']),W(async(req,res)=>{const r=await erpPull();res.json(r||{error:'Enter the ERP URL first'});}));
 app.post('/api/rms/test/:brand',auth(['admin']),W(async(req,res)=>{const c=RMS.connectors[req.params.brand];if(!c)return res.status(404).json({error:'unknown'});
@@ -439,7 +443,7 @@ app.get('/api/bg-status',auth(),W(async(req,res)=>{const r=await one("SELECT v F
 async function runTick(force){if(running)return{skipped:'already running'};running=true;
  try{const lt=await one("SELECT v FROM kv_state WHERE k='last_tick'");if(lt&&Date.now()-Date.parse(lt.v)<12*60e3&&!force){running=false;return({skipped:'ran '+Math.round((Date.now()-Date.parse(lt.v))/60000)+' min ago'});}}catch(e){running=false;throw e;}
  const out={},t0=Date.now();try{await q("REPLACE INTO kv_state(k,v) VALUES('last_tick',?)",[new Date().toISOString()]);out.discovered=await discoverDaily();out.polled=await pollRMS(Math.max(30000,(+(process.env.CRON_MAX_SECONDS||240))*1000-(Date.now()-t0)));out.located=await fillMissingLocations();out.geocoded=await geocodeBatch(15);out.sites_geocoded=await geocodeSites(8);
-  {const lp=await one("SELECT v FROM kv_state WHERE k='erp_pull_at'");if(!lp||Date.now()-Date.parse(lp.v)>55*60e3){await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_at',?)",[new Date().toISOString()]);try{out.erp_pull=await erpPull();}catch(e){out.erp_pull={error:e.message};}}}for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
+  {const slot=pullSlot(await pullEvery()),lp=await one("SELECT v FROM kv_state WHERE k='erp_pull_slot'");if(!lp||lp.v!==slot){await q("REPLACE INTO kv_state(k,v) VALUES('erp_pull_slot',?)",[slot]);try{out.erp_pull=await erpPull();}catch(e){out.erp_pull={error:e.message};}}}for(const e of await q("SELECT * FROM web_enquiries WHERE erp_status='FAILED' AND created_at>? LIMIT 20",[new Date(Date.now()-3*864e5).toISOString()]))await pushToERP(e);
   const day=istDay(),done=await one("SELECT v FROM kv_state WHERE k='perf_day'");
   if(istHour()>=19&&(!done||done.v!==day)){await evalPerformance(day);await q("REPLACE INTO kv_state(k,v) VALUES('perf_day',?)",[day]);out.performance=day;}}
  finally{running=false;}return out;}

@@ -141,7 +141,7 @@ Then `POST /erp/v1/web-enquiries/ack` with `["WEB-LZ8K2A", ...]` to mark them re
 Please use `ref` as the ERP enquiry reference so the same enquiry is not created twice.
 
 ## 12. Alternative: Field Map PULLS from the ERP (read-only GET URLs)
-If pushing is not convenient, the ERP can expose **three read-only GET URLs**; the Field Map pulls them every hour (admin can also press "Pull now" in the API Docs tab).
+If pushing is not convenient, the ERP can expose **three read-only GET URLs**; the Field Map pulls them automatically at fixed India times – by default every 6 hours (12 am, 6 am, 12 pm, 6 pm IST; admin can change to 1/3/12/24 hours) – and admin can press "Pull now" any time in the API Docs tab.
 
 | Data | Default path | Same fields as |
 |---|---|---|
