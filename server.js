@@ -30,7 +30,7 @@ const SCHEMA=[
 `CREATE TABLE IF NOT EXISTS web_enquiries(id INT AUTO_INCREMENT PRIMARY KEY,ref VARCHAR(30) UNIQUE,name VARCHAR(120),phone VARCHAR(15),email VARCHAR(120),pincode VARCHAR(10),segment VARCHAR(20),monthly_bill VARCHAR(30),message VARCHAR(600),page VARCHAR(200),ip VARCHAR(60),created_at VARCHAR(30),erp_status VARCHAR(20) DEFAULT 'PENDING',erp_response VARCHAR(300),INDEX(created_at))`,
 `CREATE TABLE IF NOT EXISTS kv_state(k VARCHAR(80) PRIMARY KEY,v VARCHAR(200))`,
 `CREATE TABLE IF NOT EXISTS routes(id INT AUTO_INCREMENT PRIMARY KEY,name VARCHAR(200),route_date VARCHAR(10),person VARCHAR(120),phone VARCHAR(20),purpose VARCHAR(40),data MEDIUMTEXT,created_by VARCHAR(120),created_at VARCHAR(30),INDEX(route_date))`];
-async function initDB(){for(const s of SCHEMA)await q(s);setTimeout(()=>seedPincodes().catch(()=>{}),2000);
+async function initDB(){for(const s of SCHEMA)await q(s);try{await q('ALTER TABLE kv_state MODIFY v VARCHAR(1000)');}catch(e){}setTimeout(()=>seedPincodes().catch(()=>{}),2000);
  for(const c of ['plant_id VARCHAR(80)','plant_name VARCHAR(200)','city VARCHAR(120)','site_lat DOUBLE','site_lng DOUBLE','inverters VARCHAR(300)','source VARCHAR(20)','no_alerts TINYINT DEFAULT 0','no_alerts_reason VARCHAR(40)','no_alerts_by VARCHAR(120)','no_alerts_at VARCHAR(30)','offline_since VARCHAR(30)'])try{await q('ALTER TABLE rms_devices ADD COLUMN '+c);}catch(e){}}
 // Bundled India Post pincode locations (West Bengal + Sikkim) – no internet lookup needed for these
 async function seedPincodes(){try{const d=JSON.parse(fs.readFileSync(path.join(__dirname,'data','pincodes-wb.json'),'utf8'));const have=(await one("SELECT COUNT(*) n FROM pincodes WHERE source='indiapost'")).n;
@@ -38,12 +38,13 @@ async function seedPincodes(){try{const d=JSON.parse(fs.readFileSync(path.join(_
  }catch(e){console.error('pincode seed',e.message);}await fillMissingLocations();}
 async function fillMissingLocations(){let n=0;for(const t of ['projects','enquiries','service'])n+=(await q(`UPDATE ${t} x JOIN pincodes p ON p.pincode=TRIM(x.pincode) SET x.lat=p.lat,x.lng=p.lng,x.area=COALESCE(x.area,p.area) WHERE x.lat IS NULL AND p.lat IS NOT NULL`)).affectedRows;return n;}
 // ---- Stage normalisation (Evergreen workflow) ----
-const STAGES=['ENQUIRY','SURVEY_REQUESTED','SURVEY_SCHEDULED','SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE','PROJECT_CREATED','AGREEMENT_PENDING','DISPATCH_PENDING','INSTALLATION_PENDING','NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED','OTHER'];
+// (kv_state.v widened to 1000 for daily snapshots)
+const STAGES=['ENQUIRY','SURVEY_REQUESTED','SURVEY_SCHEDULED','SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE','PROJECT_CREATED','AGREEMENT_PENDING','DISPATCH_PENDING','INSTALLATION_PENDING','INSTALLATION_ONGOING','NET_METERING_PENDING','DOCUMENT_SENDING','COMPLETED','OTHER'];
 function normStage(s){const t=String(s||'').toUpperCase().replace(/[^A-Z]+/g,'_');if(STAGES.includes(t))return t;
  if(/NET_?METER/.test(t))return 'NET_METERING_PENDING';if(/DOCUMENT/.test(t))return 'DOCUMENT_SENDING';
  if(/SURVEY/.test(t))return /DONE|SUBMIT|COMPLET/.test(t)?'SURVEY_DONE':/SCHEDUL|ASSIGN|ENGINEER/.test(t)?'SURVEY_SCHEDULED':'SURVEY_REQUESTED';
  if(/DESIGN/.test(t))return /DONE|COMPLET/.test(t)?'DESIGN_DONE':'DESIGN_PENDING';if(/AGREEMENT/.test(t))return 'AGREEMENT_PENDING';
- if(/DISPATCH|MATERIAL|PROCURE|PURCHASE|DELIVER/.test(t))return 'DISPATCH_PENDING';if(/INSTALL/.test(t))return 'INSTALLATION_PENDING';if(/PROJECT_?CREAT|CONFIRM/.test(t))return 'PROJECT_CREATED';
+ if(/DISPATCH|MATERIAL|PROCURE|PURCHASE|DELIVER/.test(t))return 'DISPATCH_PENDING';if(/INSTALL/.test(t))return /PROGRESS|ONGOING|ON_GOING|STARTED|WIP|RUNNING|UNDER/.test(t)?'INSTALLATION_ONGOING':/DONE|COMPLET|FINISH/.test(t)?'NET_METERING_PENDING':'INSTALLATION_PENDING';if(/PROJECT_?CREAT|CONFIRM/.test(t))return 'PROJECT_CREATED';
  if(/COMPLET|CLOSED|HANDOVER/.test(t))return 'COMPLETED';if(/ENQUIR|INQUIR|LEAD/.test(t))return 'ENQUIRY';return 'OTHER';}
 function toISODate(v){if(!v)return null;if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);return d?`${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`:null;}
  const s=String(v).trim();let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);if(m)return m[0];
@@ -136,24 +137,34 @@ app.get('/api/enquiries/by-pincode',auth(),W(async(req,res)=>{const {from,to,sou
 // Survey requests kept as ENQUIRIES in the ERP (status mentions survey and is not done)
 const SURVEY_ENQ="status REGEXP 'survey' AND status NOT REGEXP 'done|complet|submit|cancel|closed|reject'";
 app.get('/api/enquiries/survey',auth(),W(async(req,res)=>res.json((await q(`SELECT ext_id,customer,phone,pincode,area,lat,lng,status,enquiry_date,assigned_to,source FROM enquiries WHERE ${SURVEY_ENQ} ORDER BY enquiry_date DESC LIMIT 2000`)).map(e=>({...e,stage:normStage(e.status)})))));
-// ---- Map "work buckets": one click = one stage of the workflow ----
-const BUCKETS={SURVEY:['SURVEY_REQUESTED','SURVEY_SCHEDULED'],DESIGN:['SURVEY_DONE','DESIGN_PENDING','DESIGN_DONE'],AGREEMENT:['PROJECT_CREATED','AGREEMENT_PENDING'],DISPATCH:['DISPATCH_PENDING'],
- INSTALL:['INSTALLATION_PENDING'],NETMETER:['NET_METERING_PENDING'],DOCS:['DOCUMENT_SENDING'],COMPLETED:['COMPLETED'],OTHER:['OTHER','ENQUIRY']};
-const daysSince=d=>d?Math.max(0,Math.floor((Date.now()-Date.parse(d+'T00:00:00+05:30'))/864e5)):null;
-async function bucketItems(c){let out=[];
- if(BUCKETS[c])out=(await q('SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,stage,stage_label,COALESCE(stage_date,created_date) since,engineer,team,capacity_kw FROM projects WHERE stage IN (?)',[BUCKETS[c]])).map(x=>({kind:'Project',...x}));
- if(c==='SURVEY')out=out.concat((await q(`SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status,enquiry_date since,assigned_to engineer FROM enquiries WHERE ${SURVEY_ENQ}`)).map(x=>({kind:'Enquiry',...x,stage:normStage(x.status),stage_label:x.status})));
- if(c==='ENQUIRY')out=(await q(`SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status stage_label,enquiry_date since,assigned_to engineer,source FROM enquiries WHERE NOT (${SURVEY_ENQ}) AND COALESCE(status,'') NOT REGEXP 'closed|lost|cancel|reject|convert|won'`)).map(x=>({kind:'Enquiry',...x,stage:'ENQUIRY'}));
- if(c==='SERVICE')out=(await q("SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,type stage_label,status,COALESCE(scheduled_date,created_date) since,engineer,issue FROM service WHERE status NOT IN ('CLOSED','DONE','COMPLETED')")).map(x=>({kind:'Service',...x,stage:'SERVICE_'+(x.stage_label||'')}));
- out.forEach(x=>{x.days=daysSince(x.since);});return out.sort((a,b)=>(b.days??-1)-(a.days??-1));}
-app.get('/api/map/bucket',auth(),W(async(req,res)=>res.json(await bucketItems(String(req.query.c||'SURVEY').toUpperCase()))));
+// ---- Map "work layers": every stage split into pending / assigned-ongoing / done; any combination can be shown together ----
+const D30=()=>new Date(Date.now()-30*864e5).toISOString().slice(0,10); // "done" layers show the last 30 days
+const NOENG="COALESCE(TRIM(engineer),'')=''",NOASG="COALESCE(TRIM(assigned_to),'')=''";
+const LAYERS={
+ SURVEY_PENDING:{p:()=>`stage='SURVEY_REQUESTED' AND ${NOENG}`,e:()=>`${SURVEY_ENQ} AND status NOT REGEXP 'schedul|assign|allot' AND ${NOASG}`},
+ SURVEY_ASSIGNED:{p:()=>`(stage='SURVEY_SCHEDULED' OR (stage='SURVEY_REQUESTED' AND NOT ${NOENG}))`,e:()=>`${SURVEY_ENQ} AND (status REGEXP 'schedul|assign|allot' OR NOT ${NOASG})`},
+ SURVEY_DONE:{p:()=>`(stage='SURVEY_DONE' OR (survey_date>='${D30()}' AND stage NOT IN ('SURVEY_REQUESTED','SURVEY_SCHEDULED')))`,e:()=>`status REGEXP 'survey' AND status REGEXP 'done|complet|submit' AND COALESCE(enquiry_date,'9999')>='${D30()}'`,since:'survey_date'},
+ DISPATCH_PENDING:{p:()=>`stage='DISPATCH_PENDING'`},
+ DISPATCHED:{p:()=>`(stage IN ('INSTALLATION_PENDING','INSTALLATION_ONGOING') OR (dispatch_date>='${D30()}' AND stage<>'DISPATCH_PENDING'))`,since:'dispatch_date'},
+ INSTALL_PENDING:{p:()=>`stage='INSTALLATION_PENDING'`},
+ INSTALL_ONGOING:{p:()=>`stage='INSTALLATION_ONGOING'`},
+ INSTALL_DONE:{p:()=>`((installation_date>='${D30()}' AND stage NOT IN ('DISPATCH_PENDING','INSTALLATION_PENDING','INSTALLATION_ONGOING')) OR (stage='NET_METERING_PENDING' AND installation_date IS NULL))`,since:'installation_date'},
+ DESIGN:{p:()=>`stage IN ('DESIGN_PENDING','DESIGN_DONE')`},AGREEMENT:{p:()=>`stage IN ('PROJECT_CREATED','AGREEMENT_PENDING')`},
+ NETMETER:{p:()=>`stage='NET_METERING_PENDING'`},DOCS:{p:()=>`stage='DOCUMENT_SENDING'`},COMPLETED:{p:()=>`stage='COMPLETED'`},OTHER:{p:()=>`stage IN ('OTHER','ENQUIRY')`},
+ ENQUIRY:{e:()=>`NOT (${SURVEY_ENQ}) AND COALESCE(status,'') NOT REGEXP 'closed|lost|cancel|reject|convert|won|survey'`},SERVICE:{s:true}};
+const daysSince=d=>d?Math.max(0,Math.floor((Date.now()-Date.parse(String(d).slice(0,10)+'T00:00:00+05:30'))/864e5)):null;
+async function bucketItems(c){const L=LAYERS[c];if(!L)return[];let out=[];
+ if(L.p)out=(await q(`SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,stage,stage_label,COALESCE(${L.since?L.since+',':''}stage_date,created_date) since,engineer,team,capacity_kw FROM projects WHERE ${L.p()}`)).map(x=>({kind:'Project',...x}));
+ if(L.e)out=out.concat((await q(`SELECT ext_id ref,customer name,phone,NULL address,area,pincode,lat,lng,status,enquiry_date since,assigned_to engineer,source FROM enquiries WHERE ${L.e()}`)).map(x=>({kind:'Enquiry',...x,stage:c==='ENQUIRY'?'ENQUIRY':normStage(x.status),stage_label:x.status})));
+ if(L.s)out=(await q("SELECT ext_id ref,customer name,phone,address,area,pincode,lat,lng,type stage_label,status,COALESCE(scheduled_date,created_date) since,engineer,issue FROM service WHERE status NOT IN ('CLOSED','DONE','COMPLETED')")).map(x=>({kind:'Service',...x,stage:'SERVICE'}));
+ out.forEach(x=>{x.days=daysSince(x.since);x.layer=c;});return out.sort((a,b)=>(b.days??-1)-(a.days??-1));}
+app.get('/api/map/bucket',auth(),W(async(req,res)=>{const ls=String(req.query.c||'SURVEY_PENDING').toUpperCase().split(',').filter(k=>LAYERS[k]).slice(0,20);res.json((await Promise.all(ls.map(bucketItems))).flat());}));
 app.get('/api/map/counts',auth(),W(async(req,res)=>{const out={};
- for(const c of [...Object.keys(BUCKETS),'ENQUIRY','SERVICE']){const l=await bucketItems(c);out[c]={n:l.length,located:l.filter(x=>x.lat!=null).length,
-  ...(c==='SURVEY'?{requested:l.filter(x=>x.stage==='SURVEY_REQUESTED').length,scheduled:l.filter(x=>x.stage==='SURVEY_SCHEDULED').length}:{})};}
- // daily snapshot -> change since the previous day (e.g. dispatched projects leave "Dispatch")
- const day=istDay(),snap=Object.fromEntries(Object.entries(out).map(([k,v])=>[k,v.n]));await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',['snap:'+day,JSON.stringify(snap).slice(0,200)]);
+ for(const c of Object.keys(LAYERS)){const l=await bucketItems(c);out[c]={n:l.length,located:l.filter(x=>x.lat!=null).length};}
+ // daily snapshot -> change since the previous day (e.g. dispatched projects leave "Dispatch pending")
+ const day=istDay(),snap=Object.fromEntries(Object.entries(out).map(([k,v])=>[k,v.n]));await q('REPLACE INTO kv_state(k,v) VALUES(?,?)',['snap:'+day,JSON.stringify(snap).slice(0,400)]);
  const prev=await one("SELECT k,v FROM kv_state WHERE k LIKE 'snap:%' AND k<? ORDER BY k DESC LIMIT 1",['snap:'+day]);
- if(prev){const p=JSON.parse(prev.v);for(const k in out)if(p[k]!=null)out[k].delta=out[k].n-p[k];out._since=prev.k.slice(5);}
+ if(prev){try{const p=JSON.parse(prev.v);for(const k in out)if(p[k]!=null)out[k].delta=out[k].n-p[k];out._since=prev.k.slice(5);}catch(e){}}
  res.json(out);}));
 // Data check for admins: what arrived, what has no location, which stages were not recognised
 app.get('/api/data-status',auth(['admin','manager']),W(async(req,res)=>{const c=async(t)=>(await one(`SELECT COUNT(*) n,SUM(lat IS NOT NULL) located FROM ${t}`));

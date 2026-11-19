@@ -135,7 +135,16 @@ html[data-theme=light] .sres{background:#fff}
 .rnum.st b{background:#ffc34d}
 @media (max-width:760px){#routePage{flex-direction:column}.rpside{width:100%;max-height:none;border-right:0;border-bottom:1px solid var(--line)}#rmap{min-height:60vh}}
 /* Map work buckets */
-.mchips{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.mchips{display:block}.mgrp{display:grid;grid-template-columns:1fr;gap:4px;margin-bottom:8px}.mgt{font:600 10px var(--mono);letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin:2px 0}
+.mgrp.two{grid-template-columns:1fr 1fr}.mgrp.two .mgt{grid-column:1/-1}.mgrp.two .mchip{padding:6px 8px;font-size:12px}
+.mchip span{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.mchip small{flex-basis:100%;margin-left:21px}
+.mk{display:inline-block;width:14px;height:14px;flex:0 0 14px;background:var(--c);border:2px solid rgba(0,0,0,.55);box-sizing:border-box}
+.mk-c{border-radius:50%}.mk-s{border-radius:3px}.mk-d{transform:rotate(45deg);border-radius:2px;width:12px;height:12px;flex-basis:12px}
+.mk-t{border:0;clip-path:polygon(50% 0,100% 100%,0 100%);width:16px;height:15px;flex-basis:16px}
+.mk.st-h{background:transparent;border:3px solid var(--c)}.mk-t.st-h{background:var(--c);opacity:.55}
+.mk.st-r{box-shadow:0 0 0 2px #fff inset}
+.mkw{background:none;border:0}.mkw .mk{width:20px;height:20px;box-shadow:0 0 6px rgba(0,0,0,.6)}.mkw .mk-t{width:22px;height:20px}.mkw .mk-d{width:16px;height:16px}
+.mkw .mk.sel{outline:3px solid #fff;outline-offset:2px}
 .mchip{display:flex;justify-content:space-between;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--c);border-radius:10px;padding:7px 10px;cursor:pointer;color:var(--ink);font:500 12.5px var(--sans);text-align:left}
 .mchip b{font:700 16px var(--mono);color:var(--ink)}.mchip small{display:block;font:600 10px var(--mono)}.mchip .up{color:var(--amber)}.mchip .dn{color:var(--ok)}
 .mchip.on{border-color:var(--c);box-shadow:0 0 0 1px var(--c),0 0 14px color-mix(in srgb,var(--c) 40%,transparent);background:color-mix(in srgb,var(--c) 12%,var(--card))}
