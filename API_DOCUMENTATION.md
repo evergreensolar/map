@@ -154,3 +154,13 @@ If pushing is not convenient, the ERP can expose **three read-only GET URLs**; t
 - Paging (optional): include `next` (or `next_page_url`, `links.next`, `meta.next`) with the URL/path of the next page; the Field Map follows it until it is empty.
 - Paths can be changed in the app if the ERP uses different ones.
 - Please send us: the base URL, the key, and one sample response.
+
+## 13. Cancelled / deleted records (please follow this)
+A cancelled or deleted record disappears from every map list, count and route as soon as we know about it. Any ONE of these works:
+- **Status/stage text** containing cancel, reject, lost, drop, void, withdraw, abandon, terminated, not interested, or delete – e.g. `"stage": "Survey Cancelled"`, `"status": "Cancelled"`.
+- **A flag:** `"deleted": true`, `"is_deleted": true`, `"cancelled": true`, `"is_cancelled": true`, `"active": false` or `"is_active": false`.
+- **DELETE** `/erp/v1/projects/{id}` (or `/enquiries/{id}`, `/service/{id}`) – removes it completely.
+- **Pull mode:** if a record is missing from the full list the ERP returns, it is marked "Deleted in ERP". Safety: this is skipped when the list is much smaller than before (less than 70 % of known records) or had errors.
+
+Dispatch: if `dispatch_date` is today or earlier, the project is shown as **Dispatched** even if its stage text still says dispatch pending.
+Same customer as enquiry and project (same mobile number): shown once (as the project).
